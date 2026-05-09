@@ -1,0 +1,1504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Finder</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --fg: #111827;
+  --fg-secondary: #6b7280;
+  --fg-tertiary: #9ca3af;
+  --border: #e5e7eb;
+  --border-light: #f3f4f6;
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-light: #eef2ff;
+  --accent-muted: #c7d2fe;
+  --success: #10b981;
+  --success-light: #ecfdf5;
+  --warning: #f59e0b;
+  --warning-light: #fffbeb;
+  --danger: #ef4444;
+  --danger-light: #fef2f2;
+  --info: #3b82f6;
+  --info-light: #eff6ff;
+  --radius: 8px;
+  --radius-sm: 6px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+  --nav-h: 48px;
+  --max-w: 1280px;
+}
+
+html { font-size: 14px; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+/* ── NAV ── */
+.nav {
+  position: sticky; top: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  height: var(--nav-h); padding: 0 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.nav-brand {
+  font-family: var(--font-display);
+  font-weight: 600; font-size: 15px; letter-spacing: -0.01em;
+  color: var(--fg); display: flex; align-items: center; gap: 8px;
+}
+.nav-brand svg { color: var(--accent); }
+.nav-tabs { display: flex; gap: 4px; }
+.nav-tab {
+  padding: 6px 14px; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 500; color: var(--fg-secondary);
+  cursor: pointer; border: none; background: none;
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+.nav-tab:hover { color: var(--fg); background: var(--border-light); }
+.nav-tab.active { color: var(--accent); background: var(--accent-light); }
+
+/* ── LAYOUT ── */
+.container { max-width: var(--max-w); margin: 0 auto; padding: 20px 24px; }
+.page { display: none; }
+.page.active { display: block; }
+
+/* ── PANEL ── */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-light);
+}
+.panel-title {
+  font-size: 13px; font-weight: 600; color: var(--fg);
+  display: flex; align-items: center; gap: 6px;
+}
+.panel-title .count {
+  font-size: 11px; font-weight: 500;
+  color: var(--fg-tertiary);
+  background: var(--border-light);
+  padding: 1px 6px; border-radius: 10px;
+}
+.panel-body { padding: 16px; }
+
+/* ── FORM ELEMENTS ── */
+.input-group {
+  display: flex; gap: 8px; align-items: stretch;
+}
+.input-url {
+  flex: 1; height: 40px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 13px; font-family: var(--font-sans);
+  background: var(--surface); color: var(--fg);
+  outline: none; transition: border-color 0.15s;
+}
+.input-url:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,0.08); }
+.input-url::placeholder { color: var(--fg-tertiary); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 40px; padding: 0 18px;
+  border: none; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 500; font-family: var(--font-sans);
+  cursor: pointer; transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.btn-primary {
+  background: var(--accent); color: #fff;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary {
+  background: var(--surface); color: var(--fg);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--border-light); }
+.btn-ghost {
+  background: none; color: var(--fg-secondary);
+  padding: 0 8px; height: 32px;
+}
+.btn-ghost:hover { color: var(--fg); background: var(--border-light); }
+.btn-danger-ghost {
+  background: none; color: var(--danger);
+  padding: 0 8px; height: 32px;
+}
+.btn-danger-ghost:hover { background: var(--danger-light); }
+.btn-sm { height: 32px; padding: 0 12px; font-size: 12px; }
+
+.form-row {
+  display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+}
+.form-field {
+  display: flex; align-items: center; gap: 6px;
+}
+.form-field label {
+  font-size: 12px; color: var(--fg-secondary); white-space: nowrap;
+}
+.form-field label[title], .setting-label[title] {
+  border-bottom: 1px dashed var(--fg-tertiary); cursor: help;
+}
+.form-field input[type="number"] {
+  width: 64px; height: 32px; padding: 0 8px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 12px; font-family: var(--font-sans);
+  text-align: center; outline: none;
+}
+.form-field input[type="number"]:focus { border-color: var(--accent); }
+
+/* Toggle switch */
+.toggle { position: relative; display: inline-block; width: 36px; height: 20px; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-track {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: var(--border); border-radius: 10px;
+  cursor: pointer; transition: background 0.2s;
+}
+.toggle-track::before {
+  content: ''; position: absolute;
+  width: 16px; height: 16px;
+  left: 2px; top: 2px;
+  background: #fff; border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+}
+.toggle input:checked + .toggle-track { background: var(--accent); }
+.toggle input:checked + .toggle-track::before { transform: translateX(16px); }
+
+/* ── STATUS BAR ── */
+.status-bar {
+  display: none; align-items: center; gap: 8px;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.status-bar.visible { display: flex; }
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-dot.idle { background: var(--fg-tertiary); }
+.status-dot.loading { background: var(--accent); animation: pulse 1.2s infinite; }
+.status-dot.success { background: var(--success); }
+.status-dot.error { background: var(--danger); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.spinner {
+  width: 14px; height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── FILTER TABS ── */
+.filter-tabs {
+  display: flex; gap: 2px; flex-wrap: wrap;
+}
+.filter-tab {
+  padding: 4px 10px; border-radius: 4px;
+  font-size: 12px; font-weight: 500;
+  color: var(--fg-secondary);
+  background: none; border: none;
+  cursor: pointer; transition: all 0.15s;
+}
+.filter-tab:hover { background: var(--border-light); color: var(--fg); }
+.filter-tab.active { background: var(--accent-light); color: var(--accent); }
+
+/* ── RESOURCE ROW ── */
+.resource-list { display: flex; flex-direction: column; gap: 1px; background: var(--border-light); }
+.resource-row {
+  display: grid;
+  grid-template-columns: 140px 1fr auto;
+  gap: 12px; align-items: center;
+  padding: 12px 16px;
+  background: var(--surface);
+  min-height: 76px;
+  transition: background 0.1s;
+}
+.resource-row:hover { background: #fafbfc; }
+.resource-row.recommended {
+  border-left: 3px solid var(--accent);
+  padding-left: 13px;
+}
+.resource-left { display: flex; flex-direction: column; gap: 4px; }
+.resource-type {
+  display: inline-flex; align-items: center;
+  padding: 2px 8px; border-radius: 4px;
+  font-size: 11px; font-weight: 600; font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+  width: fit-content;
+}
+.type-hls { background: #dbeafe; color: #1d4ed8; }
+.type-dash { background: #fce7f3; color: #be185d; }
+.type-mp4 { background: #d1fae5; color: #047857; }
+.type-webm { background: #e0e7ff; color: #4338ca; }
+.type-ytdlp { background: #fef3c7; color: #92400e; }
+.resource-badge {
+  display: inline-flex; align-items: center;
+  padding: 1px 6px; border-radius: 3px;
+  font-size: 10px; font-weight: 600;
+  background: var(--accent-light); color: var(--accent);
+  width: fit-content;
+}
+.resource-mid { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.resource-meta {
+  font-size: 12px; color: var(--fg-secondary);
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.resource-url {
+  font-size: 12px; font-family: var(--font-mono);
+  color: var(--fg-tertiary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+  cursor: pointer;
+}
+.resource-url:hover { color: var(--accent); }
+.resource-temp-hint {
+  font-size: 11px; color: var(--warning);
+  display: flex; align-items: center; gap: 4px;
+}
+.resource-right {
+  display: flex; gap: 6px; align-items: center;
+}
+.resource-detail {
+  display: none; grid-column: 1 / -1;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--border-light);
+  font-size: 12px;
+}
+.resource-detail.open { display: block; }
+.detail-grid {
+  display: grid; grid-template-columns: 100px 1fr;
+  gap: 4px 12px;
+}
+.detail-label { color: var(--fg-tertiary); font-size: 11px; }
+.detail-value {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--fg-secondary);
+  word-break: break-all;
+}
+
+/* ── DOWNLOAD ROW ── */
+.download-list { display: flex; flex-direction: column; gap: 1px; background: var(--border-light); }
+.download-row {
+  display: grid;
+  grid-template-columns: 1fr 200px auto;
+  gap: 16px; align-items: center;
+  padding: 12px 16px;
+  background: var(--surface);
+  min-height: 64px;
+}
+.download-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.download-name {
+  font-size: 13px; font-weight: 500; color: var(--fg);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.download-source {
+  font-size: 11px; color: var(--fg-tertiary);
+  display: flex; align-items: center; gap: 6px;
+}
+.download-path {
+  font-size: 11px; color: var(--fg-tertiary);
+  font-family: var(--font-mono);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.download-progress-area { display: flex; flex-direction: column; gap: 4px; }
+.progress-bar-bg {
+  height: 6px; background: var(--border-light);
+  border-radius: 3px; overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%; border-radius: 3px;
+  transition: width 0.3s ease;
+  background: var(--accent);
+}
+.progress-bar-fill.completed { background: var(--success); }
+.progress-bar-fill.failed { background: var(--danger); }
+.progress-bar-fill.merging { background: var(--warning); }
+.progress-stats {
+  display: flex; gap: 12px; font-size: 11px; color: var(--fg-tertiary);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.download-right {
+  display: flex; align-items: center; gap: 8px;
+}
+.status-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 4px;
+  font-size: 11px; font-weight: 500;
+  white-space: nowrap;
+}
+.status-waiting { background: var(--border-light); color: var(--fg-tertiary); }
+.status-downloading { background: var(--info-light); color: var(--accent); }
+.status-merging { background: var(--warning-light); color: #92400e; }
+.status-completed { background: var(--success-light); color: #047857; }
+.status-failed { background: var(--danger-light); color: #b91c1c; }
+.status-cancelled { background: var(--border-light); color: var(--fg-tertiary); }
+
+/* ── EMPTY STATE ── */
+.empty-state {
+  padding: 40px 16px; text-align: center;
+  color: var(--fg-tertiary); font-size: 13px;
+}
+.empty-state svg { margin-bottom: 8px; color: var(--border); }
+
+/* ── TOAST ── */
+.toast-container {
+  position: fixed; bottom: 24px; right: 24px;
+  z-index: 1000; display: flex; flex-direction: column; gap: 8px;
+}
+.toast {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-radius: var(--radius-sm);
+  background: var(--fg); color: #fff;
+  font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  animation: slideIn 0.2s ease;
+  max-width: 360px;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.toast.success { background: #047857; }
+.toast.error { background: #b91c1c; }
+@keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── HISTORY TABLE ── */
+.table-wrap { overflow-x: auto; }
+table {
+  width: 100%; border-collapse: collapse;
+  font-size: 13px;
+}
+th {
+  text-align: left; padding: 10px 12px;
+  font-size: 11px; font-weight: 600;
+  color: var(--fg-tertiary); text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--fg-secondary);
+}
+td:first-child { color: var(--fg); font-weight: 500; }
+tr:hover td { background: #fafbfc; }
+.td-url {
+  font-family: var(--font-mono); font-size: 12px;
+  max-width: 280px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.td-actions { display: flex; gap: 4px; }
+
+/* ── SETTINGS ── */
+.settings-grid {
+  display: flex; flex-direction: column; gap: 24px;
+}
+.setting-section {
+  display: flex; flex-direction: column; gap: 16px;
+}
+.setting-section-title {
+  font-size: 13px; font-weight: 600; color: var(--fg);
+  padding-bottom: 8px; border-bottom: 1px solid var(--border-light);
+}
+.setting-row {
+  display: flex; align-items: center; gap: 12px;
+  min-height: 40px;
+}
+.setting-label {
+  width: 160px; flex-shrink: 0;
+  font-size: 13px; color: var(--fg-secondary);
+}
+.setting-control { flex: 1; max-width: 400px; }
+.setting-control input[type="text"],
+.setting-control select {
+  width: 100%; height: 36px; padding: 0 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 13px; font-family: var(--font-sans);
+  background: var(--surface); color: var(--fg);
+  outline: none;
+}
+.setting-control input[type="text"]:focus,
+.setting-control select:focus { border-color: var(--accent); }
+.dep-list { display: flex; flex-direction: column; gap: 8px; }
+.dep-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+.dep-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.dep-dot.ok { background: var(--success); }
+.dep-dot.missing { background: var(--danger); }
+.dep-dot.init { background: var(--warning); }
+.dep-name { font-size: 13px; font-weight: 500; color: var(--fg); }
+.dep-status { font-size: 12px; color: var(--fg-secondary); margin-left: auto; }
+
+/* ── RESPONSIVE ── */
+@media (max-width: 768px) {
+  .container { padding: 12px 16px; }
+  .nav { padding: 0 16px; }
+  .input-group { flex-direction: column; }
+  .btn-primary { width: 100%; }
+  .form-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .resource-row {
+    grid-template-columns: 1fr;
+    gap: 8px; padding: 12px;
+  }
+  .resource-left { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+  .resource-right { justify-content: flex-start; }
+  .download-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .download-right { justify-content: flex-start; flex-wrap: wrap; }
+  .setting-row { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .setting-label { width: auto; }
+  .setting-control { max-width: 100%; width: 100%; }
+  .table-wrap { font-size: 12px; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="nav">
+  <div class="nav-brand">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+    Video Finder
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" data-page="home">首页</button>
+    <button class="nav-tab" data-page="history">历史记录</button>
+    <button class="nav-tab" data-page="settings">设置</button>
+  </div>
+</nav>
+
+<!-- HOME -->
+<div class="page active" id="page-home">
+  <div class="container" style="display:flex;flex-direction:column;gap:16px;">
+
+    <!-- 嗅探输入区 -->
+    <div class="panel" id="sniffer-panel">
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:12px;">
+        <div style="font-size:15px;font-weight:600;font-family:var(--font-display);letter-spacing:-0.01em;">网页视频嗅探</div>
+        <div class="input-group">
+          <input type="text" class="input-url" id="input-url" placeholder="请输入播放页链接，例如 https://example.com/video">
+          <button class="btn btn-primary" id="btn-sniff">开始嗅探</button>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>嗅探等待时间</label>
+            <input type="number" id="opt-wait" value="10" min="1" max="60">
+            <label>秒</label>
+          </div>
+          <div class="form-field">
+            <label>下载并发数</label>
+            <input type="number" id="opt-threads" value="8" min="1" max="32">
+          </div>
+          <div class="form-field">
+            <label title="自动点击页面上的播放按钮，触发视频加载以便嗅探资源。大部分视频网站需要点击播放后才会请求视频流。">自动点击播放</label>
+            <label class="toggle"><input type="checkbox" id="opt-autoplay"><span class="toggle-track"></span></label>
+          </div>
+          <div class="form-field">
+            <label title="后台运行浏览器，不显示窗口。开启速度更快、占用资源更少；关闭可绕过部分网站的无头检测，提高嗅探成功率。">无头浏览器</label>
+            <label class="toggle"><input type="checkbox" id="opt-headless" checked><span class="toggle-track"></span></label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 嗅探状态区 -->
+    <div class="status-bar" id="sniff-status">
+      <span class="status-dot idle" id="status-dot"></span>
+      <span id="status-text">等待输入</span>
+    </div>
+
+    <!-- 候选资源区 -->
+    <div class="panel" id="candidates-panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          候选视频资源
+          <span class="count" id="candidate-count">0</span>
+        </div>
+        <div class="filter-tabs" id="candidate-filters">
+          <button class="filter-tab active" data-filter="all">全部</button>
+          <button class="filter-tab" data-filter="hls">HLS</button>
+          <button class="filter-tab" data-filter="dash">DASH</button>
+          <button class="filter-tab" data-filter="direct">直链</button>
+          <button class="filter-tab" data-filter="ytdlp">yt-dlp</button>
+        </div>
+      </div>
+      <div class="resource-list" id="candidate-list">
+        <div class="empty-state" id="candidates-empty">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <div>输入 URL 并开始嗅探以发现视频资源</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 下载任务区 -->
+    <div class="panel" id="downloads-panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          下载任务
+          <span class="count" id="dl-active-count">0 下载中</span>
+          <span class="count" id="dl-done-count">0 已完成</span>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-ghost btn-sm" id="btn-clear-all">清理全部</button>
+          <button class="btn btn-ghost btn-sm" id="btn-open-dir">打开下载目录</button>
+        </div>
+      </div>
+      <div class="download-list" id="download-list">
+        <div class="empty-state" id="downloads-empty">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <div>选择候选资源以开始下载</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- HISTORY -->
+<div class="page" id="page-history">
+  <div class="container">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">历史记录</div>
+        <div class="filter-tabs" id="history-filters">
+          <button class="filter-tab active" data-filter="all">全部</button>
+          <button class="filter-tab" data-filter="completed">已完成</button>
+          <button class="filter-tab" data-filter="failed">失败</button>
+          <button class="filter-tab" data-filter="cancelled">已取消</button>
+          <button class="filter-tab" data-filter="running">运行中</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>页面 URL</th>
+              <th>资源类型</th>
+              <th>状态</th>
+              <th>输出文件</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="history-tbody"></tbody>
+        </table>
+      </div>
+      <div class="empty-state" id="history-empty" style="display:none;">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <div>暂无历史记录</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div class="page" id="page-settings">
+  <div class="container">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">设置</div>
+      </div>
+      <div class="panel-body">
+        <div class="settings-grid">
+
+          <div class="setting-section">
+            <div class="setting-section-title">下载设置</div>
+            <div class="setting-row">
+              <div class="setting-label">下载目录</div>
+              <div class="setting-control">
+                <input type="text" id="set-dir" value="/Users/Downloads/VideoFinder">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">默认下载器</div>
+              <div class="setting-control">
+                <select id="set-downloader">
+                  <option value="auto">自动</option>
+                  <option value="ytdlp">yt-dlp</option>
+                  <option value="ffmpeg">ffmpeg</option>
+                  <option value="http">HTTP</option>
+                </select>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">默认嗅探等待时间</div>
+              <div class="setting-control">
+                <input type="number" id="set-wait" value="10" min="1" max="60" style="width:80px;"> <span style="font-size:12px;color:var(--fg-secondary);">秒</span>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">默认下载并发数</div>
+              <div class="setting-control">
+                <input type="number" id="set-threads" value="8" min="1" max="32" style="width:80px;">
+              </div>
+            </div>
+          </div>
+
+          <div class="setting-section">
+            <div class="setting-section-title">浏览器设置</div>
+            <div class="setting-row">
+              <div class="setting-label">默认 User-Agent</div>
+              <div class="setting-control">
+                <input type="text" id="set-ua" value="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)...">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label" title="自动点击页面上的播放按钮，触发视频加载以便嗅探资源。大部分视频网站需要点击播放后才会请求视频流。">自动点击播放</div>
+              <div class="setting-control">
+                <label class="toggle"><input type="checkbox" id="set-autoplay"><span class="toggle-track"></span></label>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label" title="后台运行浏览器，不显示窗口。开启速度更快、占用资源更少；关闭可绕过部分网站的无头检测，提高嗅探成功率。">无头浏览器模式</div>
+              <div class="setting-control">
+                <label class="toggle"><input type="checkbox" id="set-headless" checked><span class="toggle-track"></span></label>
+              </div>
+            </div>
+          </div>
+
+          <div class="setting-section">
+            <div class="setting-section-title">依赖检查</div>
+            <div class="dep-list" id="dep-list">
+              <div class="dep-item">
+                <span class="dep-dot ok"></span>
+                <span class="dep-name">yt-dlp</span>
+                <span class="dep-status">已安装 · 2024.12.23</span>
+              </div>
+              <div class="dep-item">
+                <span class="dep-dot ok"></span>
+                <span class="dep-name">ffmpeg</span>
+                <span class="dep-status">已安装 · 6.1.1</span>
+              </div>
+              <div class="dep-item">
+                <span class="dep-dot missing"></span>
+                <span class="dep-name">Playwright Chromium</span>
+                <span class="dep-status">未找到</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding-top:8px;">
+            <button class="btn btn-primary" id="btn-save-config">保存配置</button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+// ── API ──
+const API = {
+  async _req(url, opts = {}) {
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || '请求失败'); }
+    return res.json();
+  },
+  sniff(req) { return this._req('/api/sniff', { method: 'POST', body: JSON.stringify(req) }); },
+  getSniffResult(id) { return this._req(`/api/sniff/${id}`); },
+  download(req) { return this._req('/api/download', { method: 'POST', body: JSON.stringify(req) }); },
+  getDownloadProgress(id) { return this._req(`/api/download/${id}`); },
+  getDownloads(limit = 20) { return this._req(`/api/downloads?limit=${limit}`); },
+  cancelDownload(id) { return this._req(`/api/download/${id}/cancel`, { method: 'POST' }); },
+  getHistory(limit = 100, status = '') {
+    const p = new URLSearchParams({ limit });
+    if (status) p.append('status', status);
+    return this._req(`/api/history?${p}`);
+  },
+  deleteHistory(id) { return this._req(`/api/history/${id}`, { method: 'DELETE' }); },
+  getConfig() { return this._req('/api/config'); },
+  updateConfig(cfg) { return this._req('/api/config', { method: 'PUT', body: JSON.stringify(cfg) }); },
+  checkDeps() { return this._req('/api/check-dependencies'); },
+};
+
+// ── STATE ──
+const state = {
+  candidates: [],
+  downloads: [],
+  history: [],
+  sniffStatus: 'idle',
+  sniffMessage: '',
+  currentFilter: 'all',
+  historyFilter: 'all',
+  sniffPollingId: null,
+};
+const activeSSE = new Map();
+
+// ── MAPPERS ──
+const mediaTypeMap = {
+  hls: { label: 'HLS', css: 'hls' },
+  dash: { label: 'DASH', css: 'dash' },
+  direct_video: { label: 'MP4', css: 'mp4' },
+  page_extract: { label: 'yt-dlp', css: 'ytdlp' },
+  blob_hint: { label: 'BLOB', css: 'webm' },
+  unknown: { label: '未知', css: 'mp4' },
+};
+
+const discoveryMap = {
+  network: '网络请求',
+  html: 'HTML 解析',
+  player_config: '播放器配置',
+  yt_dlp: 'yt-dlp',
+};
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '—';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+  return (bytes / 1073741824).toFixed(2) + ' GB';
+}
+
+function formatTime(dt) {
+  if (!dt) return '—';
+  const d = new Date(dt);
+  return d.toLocaleString('zh-CN', { hour12: false });
+}
+
+function mapCandidate(c) {
+  const mt = mediaTypeMap[c.media_type] || mediaTypeMap.unknown;
+  const dm = discoveryMap[c.discovery_method] || c.discovery_method;
+  const isTemp = c.is_temporary;
+  const score = c.score || 0;
+  const isRecommended = score >= 80;
+  let badge = '';
+  if (score >= 100) badge = '页面解析';
+  else if (isRecommended) badge = '推荐';
+  else if (c.resolution) badge = c.resolution;
+
+  return {
+    id: c.id, type: mt.css, recommended: isRecommended, badge,
+    quality: c.resolution || '自动', format: mt.label,
+    bitrate: c.bandwidth ? (c.bandwidth / 1000).toFixed(1) + ' Mbps' : '—',
+    size: c.filesize ? '约 ' + formatBytes(c.filesize) : '—',
+    url: c.media_url, discovery: dm, isTemp,
+    title: c.title || '',
+    detail: {
+      fullUrl: c.media_url,
+      referer: c.referer || '—',
+      ua: c.user_agent || '—',
+      contentType: c.content_type || '—',
+      iframe: c.source_frame_url || '无',
+      temp: isTemp ? '是 — 建议立即下载' : '否',
+      method: dm,
+    },
+  };
+}
+
+function mapDownloadItem(t) {
+  const name = t.output_path ? t.output_path.split('/').pop() : t.url.split('/').pop().split('?')[0] || 'video.mp4';
+  const dl = t.downloaded_bytes || 0;
+  const total = t.total_bytes || 0;
+  return {
+    id: t.download_id || t.id,
+    candidate_id: t.candidate_id || '',
+    url: t.url || '',
+    name,
+    source: (t.downloader || 'auto').toUpperCase(),
+    path: t.output_path || '—',
+    progress: t.progress || 0,
+    speed: t.speed || '—',
+    eta: t.eta || '—',
+    downloaded: formatBytes(dl),
+    total: formatBytes(total),
+    status: t.status || 'pending',
+    error: t.error_message || '',
+  };
+}
+
+// ── INIT ──
+async function init() {
+  bindEvents();
+  renderCandidates();
+  renderDownloads();
+  renderHistory();
+  await Promise.allSettled([loadConfig(), loadDownloads(), loadHistory(), checkDependencies()]);
+}
+
+// ── NAV ──
+function bindEvents() {
+  document.querySelectorAll('.nav-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('page-' + tab.dataset.page).classList.add('active');
+      if (tab.dataset.page === 'history') loadHistory();
+      if (tab.dataset.page === 'settings') { loadConfig(); checkDependencies(); }
+    });
+  });
+
+  document.getElementById('btn-sniff').addEventListener('click', startSniff);
+  document.getElementById('input-url').addEventListener('keydown', e => { if (e.key === 'Enter') startSniff(); });
+
+  document.querySelectorAll('#candidate-filters .filter-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('#candidate-filters .filter-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      state.currentFilter = tab.dataset.filter;
+      renderCandidates();
+    });
+  });
+
+  document.querySelectorAll('#history-filters .filter-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('#history-filters .filter-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      state.historyFilter = tab.dataset.filter;
+      renderHistory();
+    });
+  });
+
+  document.getElementById('btn-clear-all').addEventListener('click', async () => {
+    if (state.downloads.length === 0) { toast('没有可清理的任务'); return; }
+
+    if (!confirm(`确定清理全部 ${state.downloads.length} 个任务？（已下载的文件不会删除）`)) return;
+
+    const ids = state.downloads.map(d => d.id);
+    const results = await Promise.allSettled(ids.map(id => API._req(`/api/download/${id}`, { method: 'DELETE' })));
+    const deleted = results.filter(r => r.status === 'fulfilled').length;
+    // Stop polling for deleted tasks
+    ids.forEach(id => { if (activeSSE.has(id)) { clearInterval(activeSSE.get(id)); activeSSE.delete(id); } });
+    state.downloads = [];
+    renderDownloads();
+    toast(`已清理 ${deleted} 个任务`, 'success');
+  });
+
+  document.getElementById('btn-open-dir').addEventListener('click', async () => {
+    try {
+      const cfg = await API.getConfig();
+      await API._req('/api/open-file', { method: 'POST', body: JSON.stringify({ path: cfg.download_dir }) });
+      toast('已打开下载目录', 'success');
+    } catch (e) { toast('打开目录失败: ' + e.message, 'error'); }
+  });
+
+  document.getElementById('btn-save-config').addEventListener('click', saveConfig);
+}
+
+// ── CONFIG ──
+async function loadConfig() {
+  try {
+    const cfg = await API.getConfig();
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+    const chk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = val; };
+    set('set-dir', cfg.download_dir || '');
+    set('set-downloader', cfg.default_downloader || 'auto');
+    set('set-wait', String(cfg.wait_seconds || 10));
+    set('set-threads', String(cfg.concurrency || 8));
+    set('set-ua', cfg.user_agent || '');
+    chk('set-autoplay', cfg.auto_click);
+    chk('set-headless', cfg.headless);
+    // Sync home options
+    set('opt-wait', cfg.wait_seconds || 10);
+    set('opt-threads', cfg.concurrency || 8);
+    chk('opt-autoplay', cfg.auto_click);
+    chk('opt-headless', cfg.headless);
+  } catch (e) { console.error('加载配置失败:', e); }
+}
+
+async function checkDependencies() {
+  const list = document.getElementById('dep-list');
+  if (!list) return;
+  try {
+    const deps = await API.checkDeps();
+    const ytOk = deps.yt_dlp;
+    const ffOk = deps.ffmpeg;
+    list.innerHTML = `
+      <div class="dep-item"><span class="dep-dot ${ytOk ? 'ok' : 'missing'}"></span><span class="dep-name">yt-dlp</span><span class="dep-status">${ytOk ? '已安装' : '未找到'}</span></div>
+      <div class="dep-item"><span class="dep-dot ${ffOk ? 'ok' : 'missing'}"></span><span class="dep-name">ffmpeg</span><span class="dep-status">${ffOk ? '已安装' : '未找到'}</span></div>
+    `;
+  } catch (e) { console.error('检查依赖失败:', e); }
+}
+
+async function saveConfig() {
+  const cfg = {
+    download_dir: document.getElementById('set-dir').value.trim(),
+    default_downloader: document.getElementById('set-downloader').value,
+    wait_seconds: parseInt(document.getElementById('set-wait').value) || 10,
+    concurrency: parseInt(document.getElementById('set-threads').value) || 8,
+    user_agent: document.getElementById('set-ua').value.trim(),
+    auto_click: document.getElementById('set-autoplay').checked,
+    headless: document.getElementById('set-headless').checked,
+  };
+  try {
+    await API.updateConfig(cfg);
+    // Sync home page options
+    document.getElementById('opt-wait').value = cfg.wait_seconds;
+    document.getElementById('opt-threads').value = cfg.concurrency;
+    document.getElementById('opt-autoplay').checked = cfg.auto_click;
+    document.getElementById('opt-headless').checked = cfg.headless;
+    toast('配置已保存', 'success');
+  } catch (e) { toast('保存失败: ' + e.message, 'error'); }
+}
+
+// ── SNIFF ──
+async function startSniff() {
+  const url = document.getElementById('input-url').value.trim();
+  if (!url) { toast('请输入播放页链接', 'error'); return; }
+
+  const waitSec = parseInt(document.getElementById('opt-wait').value) || 10;
+  const autoClick = document.getElementById('opt-autoplay').checked;
+  const headless = document.getElementById('opt-headless').checked;
+
+  setSniffStatus('loading', '正在创建嗅探任务…');
+  document.getElementById('btn-sniff').disabled = true;
+
+  try {
+    const res = await API.sniff({
+      page_url: url,
+      wait_seconds: waitSec,
+      auto_click: autoClick,
+      headless: headless,
+    });
+
+    setSniffStatus('loading', '正在嗅探页面…');
+    pollSniffResult(res.task_id);
+  } catch (e) {
+    setSniffStatus('error', '嗅探请求失败: ' + e.message);
+    document.getElementById('btn-sniff').disabled = false;
+    toast('嗅探失败: ' + e.message, 'error');
+  }
+}
+
+function pollSniffResult(taskId) {
+  if (state.sniffPollingId) clearInterval(state.sniffPollingId);
+  state.sniffPollingId = setInterval(async () => {
+    try {
+      const result = await API.getSniffResult(taskId);
+
+      if (result.status === 'completed') {
+        clearInterval(state.sniffPollingId);
+        state.sniffPollingId = null;
+        const candidates = (result.candidates || []).map(mapCandidate);
+        // Sort by score desc
+        candidates.sort((a, b) => {
+          const sa = result.candidates.find(c => c.id === a.id)?.score || 0;
+          const sb = result.candidates.find(c => c.id === b.id)?.score || 0;
+          return sb - sa;
+        });
+        if (candidates.length > 0) {
+          candidates[0].recommended = true;
+          candidates[0].badge = candidates[0].badge || '推荐';
+        }
+        state.candidates = candidates;
+        renderCandidates();
+        setSniffStatus('success', `已发现 ${candidates.length} 个候选资源`);
+        document.getElementById('btn-sniff').disabled = false;
+        toast(`发现 ${candidates.length} 个候选资源`, 'success');
+      } else if (result.status === 'failed') {
+        clearInterval(state.sniffPollingId);
+        state.sniffPollingId = null;
+        setSniffStatus('error', '嗅探失败: ' + (result.error_message || '未知错误'));
+        document.getElementById('btn-sniff').disabled = false;
+        toast('嗅探失败', 'error');
+      } else {
+        setSniffStatus('loading', `嗅探中… (${result.status})`);
+      }
+    } catch (e) {
+      clearInterval(state.sniffPollingId);
+      state.sniffPollingId = null;
+      setSniffStatus('error', '轮询失败: ' + e.message);
+      document.getElementById('btn-sniff').disabled = false;
+    }
+  }, 2000);
+}
+
+function setSniffStatus(type, msg) {
+  state.sniffStatus = type;
+  state.sniffMessage = msg;
+  const bar = document.getElementById('sniff-status');
+  const dot = document.getElementById('status-dot');
+  const text = document.getElementById('status-text');
+  bar.classList.add('visible');
+  dot.className = 'status-dot ' + type;
+  if (type === 'loading') {
+    text.innerHTML = '<span class="spinner"></span> ' + msg;
+  } else {
+    text.textContent = msg;
+  }
+}
+
+// ── RENDER CANDIDATES ──
+function renderCandidates() {
+  const list = document.getElementById('candidate-list');
+  const count = document.getElementById('candidate-count');
+  if (!list || !count) return;
+  const emptyHtml = `
+    <div class="empty-state" id="candidates-empty">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <div>输入 URL 并开始嗅探以发现视频资源</div>
+    </div>
+  `;
+
+  let items = state.candidates;
+  if (state.currentFilter !== 'all') {
+    items = items.filter(c => {
+      if (state.currentFilter === 'direct') return c.type === 'mp4' || c.type === 'webm';
+      if (state.currentFilter === 'hls') return c.type === 'hls';
+      if (state.currentFilter === 'dash') return c.type === 'dash';
+      if (state.currentFilter === 'ytdlp') return c.type === 'ytdlp';
+      return true;
+    });
+  }
+
+  count.textContent = items.length;
+
+  if (items.length === 0) {
+    list.innerHTML = emptyHtml;
+    return;
+  }
+
+  list.innerHTML = items.map(c => {
+    const safeUrl = c.url.replace(/'/g, "\\'");
+    return `
+    <div class="resource-row ${c.recommended ? 'recommended' : ''}" data-id="${c.id}">
+      <div class="resource-left">
+        <span class="resource-type type-${c.type}">${c.type.toUpperCase()}</span>
+        ${c.badge ? `<span class="resource-badge">${c.badge}</span>` : ''}
+        <span style="font-size:11px;color:var(--fg-tertiary);">${c.discovery}</span>
+      </div>
+      <div class="resource-mid">
+        ${c.title ? `<div style="font-size:13px;font-weight:500;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:500px;" title="${c.title.replace(/"/g, '&quot;')}">${c.title}</div>` : ''}
+        <div class="resource-meta">
+          <span>${c.quality}</span>
+          <span>${c.format}</span>
+          <span>${c.bitrate}</span>
+          <span>${c.size}</span>
+        </div>
+        <div class="resource-url" title="${safeUrl}" onclick="copyText('${safeUrl}')">${c.url}</div>
+        ${c.isTemp ? '<div class="resource-temp-hint"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> 临时链接，建议立即下载</div>' : ''}
+      </div>
+      <div class="resource-right">
+        <button class="btn btn-primary btn-sm" onclick="startDownload('${c.id}')">下载</button>
+        <button class="btn btn-secondary btn-sm" onclick="copyText('${safeUrl}')">复制链接</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleDetail('${c.id}')">详情</button>
+      </div>
+      <div class="resource-detail" id="detail-${c.id}">
+        <div class="detail-grid">
+          <span class="detail-label">完整 URL</span>
+          <span class="detail-value">${c.detail.fullUrl}</span>
+          <span class="detail-label">Referer</span>
+          <span class="detail-value">${c.detail.referer}</span>
+          <span class="detail-label">User-Agent</span>
+          <span class="detail-value">${c.detail.ua}</span>
+          <span class="detail-label">Content-Type</span>
+          <span class="detail-value">${c.detail.contentType}</span>
+          <span class="detail-label">来源 iframe</span>
+          <span class="detail-value">${c.detail.iframe}</span>
+          <span class="detail-label">临时链接</span>
+          <span class="detail-value">${c.detail.temp}</span>
+          <span class="detail-label">发现方式</span>
+          <span class="detail-value">${c.detail.method}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleDetail(id) {
+  const el = document.getElementById('detail-' + id);
+  if (el) el.classList.toggle('open');
+}
+
+// ── RENDER DOWNLOADS ──
+function renderDownloads() {
+  const list = document.getElementById('download-list');
+  const activeCount = document.getElementById('dl-active-count');
+  const doneCount = document.getElementById('dl-done-count');
+  if (!list || !activeCount || !doneCount) return;
+  const emptyHtml = `
+    <div class="empty-state" id="downloads-empty">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <div>选择候选资源以开始下载</div>
+    </div>
+  `;
+
+  const active = state.downloads.filter(d => ['downloading', 'waiting', 'merging', 'running', 'pending'].includes(d.status));
+  const done = state.downloads.filter(d => ['completed', 'failed', 'cancelled'].includes(d.status));
+
+  activeCount.textContent = active.length + ' 下载中';
+  doneCount.textContent = done.length + ' 已完成';
+
+  if (state.downloads.length === 0) {
+    list.innerHTML = emptyHtml;
+    return;
+  }
+
+  const statusMap = {
+    pending: { label: '等待中', cls: 'status-waiting' },
+    waiting: { label: '等待中', cls: 'status-waiting' },
+    running: { label: '运行中', cls: 'status-downloading' },
+    downloading: { label: '下载中', cls: 'status-downloading' },
+    merging: { label: '合并中', cls: 'status-merging' },
+    completed: { label: '已完成', cls: 'status-completed' },
+    failed: { label: '失败', cls: 'status-failed' },
+    cancelled: { label: '已取消', cls: 'status-cancelled' },
+    paused: { label: '已暂停', cls: 'status-waiting' },
+  };
+
+  list.innerHTML = state.downloads.map(d => {
+    const s = statusMap[d.status] || statusMap.waiting;
+    const barCls = d.status === 'completed' ? 'completed' : d.status === 'failed' ? 'failed' : d.status === 'merging' ? 'merging' : '';
+    const isActive = ['downloading', 'waiting', 'merging', 'running', 'pending'].includes(d.status);
+    return `
+    <div class="download-row" data-id="${d.id}">
+      <div class="download-left">
+        <div class="download-name">${d.name}</div>
+        <div class="download-source">
+          <span class="resource-type type-${d.source.toLowerCase()}" style="font-size:10px;padding:1px 5px;">${d.source}</span>
+          <span class="download-path">${d.path}</span>
+        </div>
+        ${d.error ? `<div style="font-size:11px;color:var(--danger);margin-top:2px;word-break:break-all;">${d.error}</div>` : ''}
+      </div>
+      <div class="download-progress-area">
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill ${barCls}" style="width:${d.progress}%"></div>
+        </div>
+        <div class="progress-stats">
+          <span>${d.speed}</span>
+          <span>ETA ${d.eta}</span>
+          <span>${d.downloaded} / ${d.total}</span>
+          <span style="margin-left:auto;">${d.progress.toFixed(1)}%</span>
+        </div>
+      </div>
+      <div class="download-right">
+        <span class="status-tag ${s.cls}">${s.label}</span>
+        ${isActive ? `<button class="btn btn-ghost btn-sm" onclick="pauseDownload('${d.id}')" title="暂停">暂停</button>` : ''}
+        ${d.status === 'paused' ? `<button class="btn btn-primary btn-sm" onclick="resumeDownload('${d.id}')" title="继续下载">继续</button>` : ''}
+        ${isActive ? `<button class="btn btn-danger-ghost btn-sm" onclick="cancelDownload('${d.id}')" title="取消并删除临时文件">取消</button>` : ''}
+        ${d.status === 'failed' ? `<button class="btn btn-secondary btn-sm" onclick="retryDownload('${d.id}')">重试</button>` : ''}
+        ${d.status === 'completed' ? `<button class="btn btn-ghost btn-sm" onclick="openFile('${d.path.replace(/'/g, "\\'")}')">打开文件</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="deleteDownloadEntry('${d.id}')" title="删除条目">×</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── DOWNLOAD ACTIONS ──
+async function startDownload(candidateId) {
+  const concurrency = parseInt(document.getElementById('opt-threads').value) || 8;
+  try {
+    const res = await API.download({
+      candidate_id: candidateId,
+      downloader: 'auto',
+      concurrency: concurrency,
+    });
+
+    const dl = {
+      id: res.download_id,
+      candidate_id: candidateId,
+      url: '',
+      name: '准备中…',
+      source: '—',
+      path: '—',
+      progress: 0, speed: '—', eta: '—',
+      downloaded: '0', total: '—',
+      status: res.status || 'pending',
+      error: '',
+    };
+    state.downloads.unshift(dl);
+    renderDownloads();
+    toast('已添加下载任务');
+
+    subscribeDownloadProgress(res.download_id);
+  } catch (e) {
+    toast('下载失败: ' + e.message, 'error');
+  }
+}
+
+function subscribeDownloadProgress(downloadId) {
+  if (activeSSE.has(downloadId)) return;
+
+  // Poll instead of SSE for simplicity
+  const pollId = setInterval(async () => {
+    try {
+      const progress = await API.getDownloadProgress(downloadId);
+      const dl = state.downloads.find(d => d.id === downloadId);
+      if (!dl) { clearInterval(pollId); return; }
+
+      dl.status = progress.status || dl.status;
+      dl.progress = progress.progress || 0;
+      dl.speed = progress.speed || '—';
+      dl.eta = progress.eta || '—';
+      dl.downloaded = formatBytes(progress.downloaded_bytes);
+      dl.total = formatBytes(progress.total_bytes);
+      dl.error = progress.error_message || dl.error || '';
+      if (progress.output_path) {
+        dl.path = progress.output_path;
+        dl.name = progress.output_path.split('/').pop();
+      }
+
+      renderDownloads();
+
+      if (['completed', 'failed', 'cancelled', 'paused'].includes(progress.status)) {
+        clearInterval(pollId);
+        activeSSE.delete(downloadId);
+        // Don't show failure toast if we already marked it as paused (race condition)
+        if (progress.status === 'completed') toast(dl.name + ' 下载完成', 'success');
+        if (progress.status === 'failed' && dl.status !== 'paused') toast(dl.name + ' 下载失败', 'error');
+      }
+    } catch (e) {
+      clearInterval(pollId);
+      activeSSE.delete(downloadId);
+    }
+  }, 1500);
+
+  activeSSE.set(downloadId, pollId);
+}
+
+async function cancelDownload(id) {
+  try {
+    await API.cancelDownload(id);
+    const dl = state.downloads.find(d => d.id === id);
+    if (dl) dl.status = 'cancelled';
+    if (activeSSE.has(id)) { clearInterval(activeSSE.get(id)); activeSSE.delete(id); }
+    renderDownloads();
+    toast('已取消下载并清理临时文件');
+  } catch (e) { toast('取消失败: ' + e.message, 'error'); }
+}
+
+async function pauseDownload(id) {
+  try {
+    // Stop polling FIRST to avoid detecting process exit as "failed"
+    if (activeSSE.has(id)) { clearInterval(activeSSE.get(id)); activeSSE.delete(id); }
+
+    const dl = state.downloads.find(d => d.id === id);
+    if (dl) { dl.status = 'paused'; dl.speed = '—'; dl.eta = '—'; }
+    renderDownloads();
+
+    // Then cancel the process but keep partial files
+    await API._req(`/api/download/${id}/cancel?keep_files=true`, { method: 'POST' });
+    toast('已暂停下载');
+  } catch (e) { toast('暂停失败: ' + e.message, 'error'); }
+}
+
+async function resumeDownload(id) {
+  const dl = state.downloads.find(d => d.id === id);
+  if (!dl || !dl.candidate_id) { toast('无法恢复下载：缺少候选资源信息', 'error'); return; }
+
+  try {
+    // Delete the paused task entry (keep files, clean only temp files)
+    await API._req(`/api/download/${id}`, { method: 'DELETE' });
+    if (activeSSE.has(id)) { clearInterval(activeSSE.get(id)); activeSSE.delete(id); }
+    state.downloads = state.downloads.filter(d => d.id !== id);
+
+    // Pass the previous output filename so yt-dlp can find the .part file
+    // If path is not available, don't pass output_name (backend generates deterministic path from candidate_id)
+    const outputName = dl.path && dl.path !== '—' ? dl.path.split('/').pop() : null;
+    const concurrency = parseInt(document.getElementById('opt-threads').value) || 8;
+    const body = {
+      candidate_id: dl.candidate_id,
+      downloader: 'auto',
+      concurrency: concurrency,
+    };
+    if (outputName) body.output_name = outputName;
+
+    const res = await API._req('/api/download', { method: 'POST', body: JSON.stringify(body) });
+
+    // Verify the new output path matches the old one (for .part file continuity)
+    // The progress polling will update dl.path once the download starts
+
+    const newDl = {
+      id: res.download_id,
+      candidate_id: dl.candidate_id,
+      url: dl.url,
+      name: outputName || '准备中…',
+      source: dl.source,
+      path: outputName ? dl.path : '—',
+      progress: 0,
+      speed: '—', eta: '—',
+      downloaded: dl.downloaded,
+      total: dl.total,
+      status: res.status || 'pending',
+      error: '',
+    };
+    state.downloads.unshift(newDl);
+    renderDownloads();
+    subscribeDownloadProgress(res.download_id);
+    toast('正在继续下载…', 'success');
+  } catch (e) { toast('恢复下载失败: ' + e.message, 'error'); }
+}
+
+async function retryDownload(id) {
+  try {
+    // Delete old failed task (keep file)
+    await API._req(`/api/download/${id}`, { method: 'DELETE' });
+    state.downloads = state.downloads.filter(d => d.id !== id);
+    renderDownloads();
+    toast('已删除失败任务，请重新点击下载', 'success');
+  } catch (e) { toast('操作失败: ' + e.message, 'error'); }
+}
+
+async function deleteDownloadEntry(id) {
+  try {
+    // Only delete the DB entry, keep the file
+    await API._req(`/api/download/${id}`, { method: 'DELETE' });
+    if (activeSSE.has(id)) { clearInterval(activeSSE.get(id)); activeSSE.delete(id); }
+    state.downloads = state.downloads.filter(d => d.id !== id);
+    renderDownloads();
+    toast('已删除', 'success');
+  } catch (e) { toast('删除失败: ' + e.message, 'error'); }
+}
+
+// ── LOAD DOWNLOADS ──
+async function loadDownloads() {
+  try {
+    const res = await API.getDownloads(20);
+    if (!res.items) return;
+    // Only restore recent tasks (within 1 hour) or active tasks
+    const now = Date.now();
+    state.downloads = res.items
+      .filter(i => {
+        if (['running', 'downloading', 'merging', 'pending', 'paused'].includes(i.status)) return true;
+        if (i.status === 'completed' && i.finished_at) {
+          return now - new Date(i.finished_at).getTime() < 3600000;
+        }
+        if (i.status === 'failed' && i.finished_at) {
+          return now - new Date(i.finished_at).getTime() < 3600000;
+        }
+        return false;
+      })
+      .map(i => mapDownloadItem(i));
+    renderDownloads();
+
+    // Re-subscribe to active downloads
+    res.items.filter(i => ['running', 'downloading', 'merging', 'pending'].includes(i.status)).forEach(i => {
+      subscribeDownloadProgress(i.download_id || i.id);
+    });
+  } catch (e) { console.error('加载下载列表失败:', e); }
+}
+
+// ── RENDER HISTORY ──
+async function loadHistory() {
+  const filter = state.historyFilter;
+  const status = filter === 'all' ? '' : filter;
+  try {
+    const res = await API.getHistory(100, status);
+    state.history = (res.items || []).map(h => ({
+      id: h.id,
+      time: formatTime(h.created_at),
+      url: h.page_url,
+      type: (mediaTypeMap[h.media_type] || mediaTypeMap.unknown).label,
+      status: h.status,
+      file: h.output_path ? h.output_path.split('/').pop() : '—',
+    }));
+    renderHistory();
+  } catch (e) { console.error('加载历史记录失败:', e); }
+}
+
+function renderHistory() {
+  const tbody = document.getElementById('history-tbody');
+  const empty = document.getElementById('history-empty');
+  if (!tbody || !empty) return;
+
+  let items = state.history;
+  if (state.historyFilter !== 'all') {
+    items = items.filter(h => h.status === state.historyFilter);
+  }
+
+  if (items.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+
+  const statusMap = {
+    completed: { label: '已完成', cls: 'status-completed' },
+    failed: { label: '失败', cls: 'status-failed' },
+    cancelled: { label: '已取消', cls: 'status-cancelled' },
+    running: { label: '运行中', cls: 'status-downloading' },
+    downloading: { label: '下载中', cls: 'status-downloading' },
+    pending: { label: '等待中', cls: 'status-waiting' },
+  };
+
+  tbody.innerHTML = items.map(h => {
+    const s = statusMap[h.status] || statusMap.completed;
+    const typeCss = h.type.toLowerCase().replace(/[^a-z]/g, '');
+    return `
+    <tr>
+      <td>${h.time}</td>
+      <td class="td-url" title="${h.url}">${h.url}</td>
+      <td><span class="resource-type type-${typeCss}" style="font-size:10px;padding:1px 5px;">${h.type}</span></td>
+      <td><span class="status-tag ${s.cls}">${s.label}</span></td>
+      <td style="font-family:var(--font-mono);font-size:12px;">${h.file}</td>
+      <td class="td-actions">
+        <button class="btn btn-ghost btn-sm" onclick="copyText('${h.url.replace(/'/g, "\\'")}')">复制链接</button>
+        <button class="btn btn-danger-ghost btn-sm" onclick="deleteHistory('${h.id}')">删除</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function deleteHistory(id) {
+  try {
+    await API.deleteHistory(id);
+    state.history = state.history.filter(h => h.id !== id);
+    renderHistory();
+    toast('已删除记录');
+  } catch (e) { toast('删除失败: ' + e.message, 'error'); }
+}
+
+// ── UTILS ──
+async function openFile(path) {
+  if (!path || path === '—') { toast('文件路径无效', 'error'); return; }
+  try {
+    await API._req('/api/open-file', { method: 'POST', body: JSON.stringify({ path }) });
+    toast('已打开文件', 'success');
+  } catch (e) { toast('打开失败: ' + e.message, 'error'); }
+}
+
+function copyText(text) {
+  navigator.clipboard.writeText(text).then(() => toast('已复制到剪贴板', 'success')).catch(() => toast('复制失败', 'error'));
+}
+
+function toast(msg, type) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const el = document.createElement('div');
+  el.className = 'toast' + (type ? ' ' + type : '');
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateY(8px)'; setTimeout(() => el.remove(), 200); }, 2500);
+}
+
+init();
+</script>
+</body>
+</html>

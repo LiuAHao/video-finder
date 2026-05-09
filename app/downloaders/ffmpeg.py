@@ -1,0 +1,159 @@
+"""ffmpeg downloader implementation."""
+
+import asyncio
+import shutil
+from typing import Optional, Callable
+from pathlib import Path
+
+from .base import BaseDownloader, DownloadResult
+from ..services.progress import ProgressInfo, FFmpegProgressParser
+
+
+class FFmpegDownloader(BaseDownloader):
+    """ffmpeg downloader for HLS/DASH streams."""
+
+    def __init__(
+        self,
+        url: str,
+        output_path: str,
+        referer: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        on_progress: Optional[Callable[[ProgressInfo], None]] = None,
+        total_duration: Optional[float] = None,
+        extra_args: Optional[list[str]] = None,
+    ):
+        super().__init__(url, output_path, referer, user_agent, on_progress)
+        self.total_duration = total_duration
+        self.extra_args = extra_args or []
+        self._parser = FFmpegProgressParser(total_duration)
+
+    def get_command(self) -> list[str]:
+        """Get ffmpeg command."""
+        # Find ffmpeg executable
+        ffmpeg_path = shutil.which("ffmpeg")
+        if not ffmpeg_path:
+            raise FileNotFoundError("ffmpeg not found. Please install ffmpeg.")
+
+        cmd = [
+            ffmpeg_path,
+            "-y",  # Overwrite output
+            "-nostdin",  # No interactive input
+        ]
+
+        # Headers - must be formatted properly for ffmpeg
+        headers = []
+        if self.referer:
+            headers.append(f"Referer: {self.referer}")
+        if self.user_agent:
+            headers.append(f"User-Agent: {self.user_agent}")
+
+        if headers:
+            # ffmpeg requires headers to end with \r\n
+            header_str = "\r\n".join(headers) + "\r\n"
+            cmd.extend(["-headers", header_str])
+
+        # Input URL
+        cmd.extend(["-i", self.url])
+
+        # Copy codec (no re-encoding)
+        cmd.extend(["-c", "copy"])
+
+        # Disable subtitles
+        cmd.extend(["-sn"])
+
+        # Extra args
+        cmd.extend(self.extra_args)
+
+        # Output file
+        cmd.append(self.output_path)
+
+        return cmd
+
+    async def download(self) -> DownloadResult:
+        """Start ffmpeg download."""
+        try:
+            command = self.get_command()
+            return await self._run_process_with_progress(command, self._parse_progress)
+        except FileNotFoundError as e:
+            return DownloadResult(
+                success=False,
+                error_message=str(e),
+            )
+        except Exception as e:
+            return DownloadResult(
+                success=False,
+                error_message=f"ffmpeg error: {e}",
+            )
+
+    async def cancel(self) -> None:
+        """Cancel the download."""
+        self._cancelled = True
+        if self._process:
+            try:
+                self._process.terminate()
+                await asyncio.sleep(1)
+                if self._process.returncode is None:
+                    self._process.kill()
+            except Exception:
+                pass
+
+    def _parse_progress(self, line: str) -> Optional[ProgressInfo]:
+        """Parse ffmpeg progress line."""
+        return self._parser.parse_line(line)
+
+
+class FFmpegProbe:
+    """Probe media file using ffprobe."""
+
+    async def probe(self, url: str) -> Optional[dict]:
+        """Probe URL and return media info."""
+        ffprobe_path = shutil.which("ffprobe")
+        if not ffprobe_path:
+            return None
+
+        cmd = [
+            ffprobe_path,
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_format",
+            "-show_streams",
+            url,
+        ]
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=30,
+            )
+
+            if process.returncode == 0 and stdout:
+                import json
+                return json.loads(stdout.decode())
+            else:
+                return None
+
+        except (asyncio.TimeoutError, Exception):
+            return None
+
+    async def check_available(self) -> bool:
+        """Check if ffmpeg/ffprobe is available."""
+        ffmpeg_path = shutil.which("ffmpeg")
+        if not ffmpeg_path:
+            return False
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                ffmpeg_path, "-version",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await process.communicate()
+            return process.returncode == 0
+        except Exception:
+            return False

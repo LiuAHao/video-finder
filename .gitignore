@@ -1,0 +1,197 @@
+# ──────────────────────────────────────────────
+# Python
+# ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+.Python
+
+# Build / packaging artifacts
+build/
+dist/
+develop-eggs/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.whl
+
+# ──────────────────────────────────────────────
+# Virtual environments
+# ──────────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ──────────────────────────────────────────────
+# Environment & secrets
+# ──────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+# Keep the example template
+!.env.example
+
+# ──────────────────────────────────────────────
+# Database
+# ──────────────────────────────────────────────
+data/*.sqlite
+data/*.sqlite3
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# ──────────────────────────────────────────────
+# Logs
+# ──────────────────────────────────────────────
+logs/
+*.log
+*.log.*
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ──────────────────────────────────────────────
+# Downloads (keep directory structure, ignore media)
+# ──────────────────────────────────────────────
+# Video files
+downloads/**/*.mp4
+downloads/**/*.mkv
+downloads/**/*.webm
+downloads/**/*.mov
+downloads/**/*.flv
+downloads/**/*.ts
+downloads/**/*.avi
+downloads/**/*.wmv
+downloads/**/*.m4v
+downloads/**/*.mp3
+downloads/**/*.m4a
+downloads/**/*.aac
+
+# Partial / temp download files
+downloads/**/*.part
+downloads/**/*.ytdl
+downloads/**/*.tmp
+downloads/**/*.temp
+
+# Subdirectories created at runtime (except .gitkeep)
+downloads/*/
+!downloads/.gitkeep
+
+# ──────────────────────────────────────────────
+# Testing & coverage
+# ──────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+nosetests.xml
+test-results/
+
+# ──────────────────────────────────────────────
+# Type checking
+# ──────────────────────────────────────────────
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyright/
+pyrightconfig.json
+
+# ──────────────────────────────────────────────
+# Linters / formatters
+# ──────────────────────────────────────────────
+.ruff_cache/
+
+# ──────────────────────────────────────────────
+# Playwright / browser automation
+# ──────────────────────────────────────────────
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# ──────────────────────────────────────────────
+# IDE & editors
+# ──────────────────────────────────────────────
+# VS Code
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# JetBrains (PyCharm, etc.)
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Vim / Emacs
+*.swp
+*.swo
+*.swn
+*~
+\#*\#
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ──────────────────────────────────────────────
+# macOS
+# ──────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+ehthumbs.db
+Thumbs.db
+
+# ──────────────────────────────────────────────
+# Windows
+# ──────────────────────────────────────────────
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ──────────────────────────────────────────────
+# Linux
+# ──────────────────────────────────────────────
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ──────────────────────────────────────────────
+# Misc runtime artifacts
+# ──────────────────────────────────────────────
+*.pid
+*.seed
+*.pid.lock
+.cache/
+.tmp/
+tmp/
+temp/
