@@ -6,7 +6,7 @@ from typing import Optional, Callable
 from pathlib import Path
 
 from .base import BaseDownloader, DownloadResult
-from ..services.progress import ProgressInfo, FFmpegProgressParser
+from ..services.progress import ProgressInfo, FFmpegProgressParser, parse_m3u8_segments
 
 
 class FFmpegDownloader(BaseDownloader):
@@ -21,11 +21,24 @@ class FFmpegDownloader(BaseDownloader):
         on_progress: Optional[Callable[[ProgressInfo], None]] = None,
         total_duration: Optional[float] = None,
         extra_args: Optional[list[str]] = None,
+        media_type: Optional[str] = None,
     ):
         super().__init__(url, output_path, referer, user_agent, on_progress)
         self.total_duration = total_duration
         self.extra_args = extra_args or []
-        self._parser = FFmpegProgressParser(total_duration)
+        self.media_type = media_type
+        self._parser = FFmpegProgressParser(
+            total_duration=total_duration,
+            media_type=media_type,
+        )
+
+    async def _init_segment_count(self) -> None:
+        """Parse m3u8 to get total segment count before download."""
+        if self.media_type != "hls":
+            return
+        total = await parse_m3u8_segments(self.url)
+        if total:
+            self._parser.total_segments = total
 
     def get_command(self) -> list[str]:
         """Get ffmpeg command."""
@@ -72,6 +85,8 @@ class FFmpegDownloader(BaseDownloader):
     async def download(self) -> DownloadResult:
         """Start ffmpeg download."""
         try:
+            # Pre-parse m3u8 for segment count
+            await self._init_segment_count()
             command = self.get_command()
             return await self._run_process_with_progress(command, self._parse_progress)
         except FileNotFoundError as e:

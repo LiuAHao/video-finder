@@ -195,6 +195,7 @@ async def create_download_task(request: DownloadRequest, background_tasks: Backg
             output_path = str(Path(download_dir) / f"video_{candidate.media_type}_{short_id}.mp4")
 
     # Create download task
+    media_type = MediaType(candidate.media_type)
     downloader_type = DownloaderType(request.downloader) if request.downloader != "auto" else DownloaderType.AUTO
 
     task = await storage.create_download_task(
@@ -209,7 +210,7 @@ async def create_download_task(request: DownloadRequest, background_tasks: Backg
         _run_download_task,
         task.id,
         candidate.media_url,
-        MediaType(candidate.media_type),
+        media_type,
         output_path,
         downloader_type,
         candidate.referer,
@@ -217,7 +218,10 @@ async def create_download_task(request: DownloadRequest, background_tasks: Backg
         request.concurrency,
     )
 
-    return DownloadResponse(download_id=task.id, status=TaskStatus.RUNNING)
+    return DownloadResponse(
+        download_id=task.id,
+        status=TaskStatus.RUNNING,
+    )
 
 
 async def _run_download_task(
@@ -245,16 +249,21 @@ async def _run_download_task(
                 total_bytes=info.total_bytes,
             )
         )
+        # Build SSE data with segment info for HLS
+        sse_data = {
+            "progress": info.progress,
+            "speed": info.speed,
+            "eta": info.eta,
+            "status": info.status,
+        }
+        if info.media_type:
+            sse_data["media_type"] = info.media_type
+        if info.segment_current is not None:
+            sse_data["segment_current"] = info.segment_current
+        if info.segment_total is not None:
+            sse_data["segment_total"] = info.segment_total
         asyncio.create_task(
-            progress_streamer.publish(
-                task_id,
-                json.dumps({
-                    "progress": info.progress,
-                    "speed": info.speed,
-                    "eta": info.eta,
-                    "status": info.status,
-                })
-            )
+            progress_streamer.publish(task_id, json.dumps(sse_data))
         )
 
     result = await download_manager.start_download(
@@ -313,6 +322,24 @@ async def get_download_progress(download_id: str):
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    # Get real-time segment info from progress tracker
+    progress_info = download_manager.get_progress(download_id)
+    segment_current = None
+    segment_total = None
+    media_type = None
+    stage = None
+    elapsed_seconds = None
+    file_size_bytes = None
+    logs = None
+    if progress_info:
+        segment_current = progress_info.segment_current
+        segment_total = progress_info.segment_total
+        media_type = progress_info.media_type
+        stage = progress_info.stage
+        elapsed_seconds = progress_info.elapsed_seconds
+        file_size_bytes = progress_info.file_size_bytes
+        logs = progress_info.logs
+
     return DownloadProgressResponse(
         download_id=task.id,
         status=TaskStatus(task.status),
@@ -323,6 +350,13 @@ async def get_download_progress(download_id: str):
         downloaded_bytes=task.downloaded_bytes,
         total_bytes=task.total_bytes,
         error_message=task.error_message,
+        media_type=media_type,
+        segment_current=segment_current,
+        segment_total=segment_total,
+        stage=stage,
+        elapsed_seconds=elapsed_seconds,
+        file_size_bytes=file_size_bytes,
+        logs=logs,
     )
 
 
@@ -385,12 +419,8 @@ async def delete_download_task(download_id: str, cleanup: bool = False):
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
-    if cleanup:
-        # Delete everything including the completed file
-        _cleanup_download_files(task.output_path)
-    elif task.status not in ("paused",):
-        # For non-paused tasks, clean temp files; keep them for paused tasks (resume needs .part)
-        _cleanup_temp_files(task.output_path)
+    # Always clean temp files when deleting task
+    _cleanup_download_files(task.output_path)
 
     success = await storage.delete_history(download_id)
     if not success:
@@ -399,39 +429,80 @@ async def delete_download_task(download_id: str, cleanup: bool = False):
 
 
 def _cleanup_download_files(output_path: str) -> None:
-    """Remove downloaded file and related temp files (.part, .ytdl, etc)."""
-    if not output_path:
-        return
-    p = Path(output_path)
-    # Remove the output file itself
-    if p.exists():
-        try:
-            p.unlink()
-        except OSError:
-            pass
-    # Remove temp files with same stem
-    _cleanup_temp_files(output_path)
+    """Remove downloaded file and all related temp files.
 
-
-def _cleanup_temp_files(output_path: str) -> None:
-    """Remove only temp/partial files (.part, .ytdl, .tmp), keep completed downloads."""
+    Cleans:
+    - Final output file (video.mp4)
+    - yt-dlp temp files (.part, .ytdl, .temp)
+    - yt-dlp format-specific parts (video.f1234.part)
+    - ffmpeg temp files (.tmp)
+    - HLS segment files (.ts)
+    - Temp directories created by downloaders
+    """
     if not output_path:
         return
     p = Path(output_path)
     if not p.parent.exists():
         return
-    for suffix in (".part", ".ytdl", ".tmp"):
-        for f in p.parent.glob(f"{p.stem}.*{suffix}*"):
+
+    parent = p.parent
+    stem = p.stem
+
+    # 1. Remove the final output file
+    if p.exists():
+        try:
+            p.unlink()
+        except OSError:
+            pass
+
+    # 2. Remove temp files with common suffixes
+    temp_suffixes = [".part", ".ytdl", ".temp", ".tmp", ".ts"]
+    for suffix in temp_suffixes:
+        for f in parent.glob(f"{stem}*{suffix}*"):
+            if f.is_file():
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
+
+    # 3. Remove yt-dlp format-specific parts (e.g., video.f1234.video.part)
+    for f in parent.glob(f"{stem}.*.part"):
+        if f.is_file():
             try:
                 f.unlink()
             except OSError:
                 pass
-    # Also catch yt-dlp .part files with format ID like stem.f1234.part
-    for f in p.parent.glob(f"{p.stem}.*.part"):
-        try:
-            f.unlink()
-        except OSError:
-            pass
+
+    # 4. Remove yt-dlp format-specific video/audio files (e.g., video.f1234.mp4)
+    for f in parent.glob(f"{stem}.f*.mp4"):
+        if f.is_file():
+            try:
+                f.unlink()
+            except OSError:
+                pass
+    for f in parent.glob(f"{stem}.f*.m4a"):
+        if f.is_file():
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
+    # 5. Remove temp directories (ffmpeg sometimes creates these)
+    for d in parent.glob(f"{stem}_*"):
+        if d.is_dir():
+            import shutil
+            try:
+                shutil.rmtree(d)
+            except OSError:
+                pass
+
+    # 6. Remove ffmpeg concat list files
+    for f in parent.glob(f"{stem}*.txt"):
+        if f.is_file() and "concat" in f.name.lower():
+            try:
+                f.unlink()
+            except OSError:
+                pass
 
 
 @router.post("/api/open-file")
@@ -464,29 +535,27 @@ async def open_file(request: Request):
 
 
 @router.post("/api/download/{download_id}/cancel")
-async def cancel_download(download_id: str, keep_files: bool = False):
-    """Cancel a download task. If keep_files=true (pause), keep partial files for resume."""
+async def cancel_download(download_id: str):
+    """Cancel a download task and clean up all temp files."""
     task = await storage.get_download_task(download_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
     success = await download_manager.cancel_download(download_id)
 
-    if not keep_files:
-        # Clean up partial download files
-        _cleanup_download_files(task.output_path)
+    # Clean up all download files (including partial, segments, etc.)
+    _cleanup_download_files(task.output_path)
 
     if not success and task.status in {"completed", "failed", "cancelled"}:
         return {"status": task.status}
 
-    new_status = "paused" if keep_files else "cancelled"
     await storage.update_download_task(
         download_id,
-        status=new_status,
+        status="cancelled",
         error_message=None if success else "任务未在当前下载进程中运行，已标记为取消",
-        finished_at=datetime.utcnow() if not keep_files else None,
+        finished_at=datetime.utcnow(),
     )
-    return {"status": new_status}
+    return {"status": "cancelled"}
 
 
 @router.get("/api/history", response_model=HistoryResponse)

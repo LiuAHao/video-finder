@@ -92,6 +92,10 @@ class DownloadManager:
                 total_bytes=info.total_bytes,
                 status=info.status,
                 message=info.message,
+                stage=info.stage,
+                elapsed_seconds=info.elapsed_seconds,
+                file_size_bytes=info.file_size_bytes,
+                logs=info.logs,
             )
             if external_on_progress:
                 external_on_progress(info)
@@ -112,6 +116,7 @@ class DownloadManager:
                 referer=referer,
                 user_agent=user_agent,
                 on_progress=handle_progress,
+                media_type=media_type.value if media_type else None,
             )
         elif downloader_type == DownloaderType.HTTP:
             return HttpDownloader(
@@ -189,7 +194,12 @@ class DownloadManager:
                     total_bytes=info.total_bytes,
                     status=info.status,
                     message=info.message,
+                    stage=info.stage,
+                    elapsed_seconds=info.elapsed_seconds,
+                    file_size_bytes=info.file_size_bytes,
+                    logs=info.logs,
                 ),
+                media_type=media_type.value,
             )
             result = await ffmpeg_dl.download()
 

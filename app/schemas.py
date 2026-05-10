@@ -33,7 +33,6 @@ class TaskStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
-    PAUSED = "paused"
 
 
 class DownloaderType(str, Enum):
@@ -123,6 +122,13 @@ class DownloadProgressResponse(BaseModel):
     downloaded_bytes: Optional[int] = None
     total_bytes: Optional[int] = None
     error_message: Optional[str] = None
+    media_type: Optional[str] = None
+    segment_current: Optional[int] = None
+    segment_total: Optional[int] = None
+    stage: Optional[str] = None
+    elapsed_seconds: Optional[int] = None
+    file_size_bytes: Optional[int] = None
+    logs: Optional[list[str]] = None
 
 
 # History Schemas

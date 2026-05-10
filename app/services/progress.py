@@ -18,6 +18,13 @@ class ProgressInfo:
         total_bytes: Optional[int] = None,
         status: str = "running",
         message: Optional[str] = None,
+        media_type: Optional[str] = None,
+        segment_current: Optional[int] = None,
+        segment_total: Optional[int] = None,
+        stage: Optional[str] = None,
+        elapsed_seconds: Optional[int] = None,
+        file_size_bytes: Optional[int] = None,
+        logs: Optional[list[str]] = None,
     ):
         self.progress = progress
         self.speed = speed
@@ -26,6 +33,13 @@ class ProgressInfo:
         self.total_bytes = total_bytes
         self.status = status
         self.message = message
+        self.media_type = media_type
+        self.segment_current = segment_current
+        self.segment_total = segment_total
+        self.stage = stage
+        self.elapsed_seconds = elapsed_seconds
+        self.file_size_bytes = file_size_bytes
+        self.logs = logs or []
         self.timestamp = datetime.utcnow()
 
 
@@ -46,6 +60,10 @@ class ProgressTracker:
         total_bytes: Optional[int] = None,
         status: Optional[str] = None,
         message: Optional[str] = None,
+        stage: Optional[str] = None,
+        elapsed_seconds: Optional[int] = None,
+        file_size_bytes: Optional[int] = None,
+        logs: Optional[list[str]] = None,
     ) -> ProgressInfo:
         """Update progress for a task."""
         if task_id not in self._progress:
@@ -67,6 +85,14 @@ class ProgressTracker:
             info.status = status
         if message is not None:
             info.message = message
+        if stage is not None:
+            info.stage = stage
+        if elapsed_seconds is not None:
+            info.elapsed_seconds = elapsed_seconds
+        if file_size_bytes is not None:
+            info.file_size_bytes = file_size_bytes
+        if logs is not None:
+            info.logs = logs
 
         info.timestamp = datetime.utcnow()
 
@@ -194,13 +220,38 @@ class FFmpegProgressParser:
     _size_pattern = re.compile(
         r'size=\s*(\d+)(\w+)'
     )
+    _segment_pattern = re.compile(
+        r"Opening '.*\.ts\??"
+    )
 
-    def __init__(self, total_duration: Optional[float] = None):
+    def __init__(
+        self,
+        total_duration: Optional[float] = None,
+        total_segments: Optional[int] = None,
+        media_type: Optional[str] = None,
+    ):
         self.total_duration = total_duration
+        self.total_segments = total_segments
+        self.media_type = media_type
+        self._segment_current = 0
 
     def parse_line(self, line: str) -> Optional[ProgressInfo]:
         """Parse a line of ffmpeg output."""
         line = line.strip()
+
+        # Track HLS segment progress
+        if self.media_type == "hls" and self._segment_pattern.search(line):
+            self._segment_current += 1
+            progress = 0.0
+            if self.total_segments and self.total_segments > 0:
+                progress = min(100.0, (self._segment_current / self.total_segments) * 100)
+            return ProgressInfo(
+                progress=progress,
+                status="downloading",
+                media_type="hls",
+                segment_current=self._segment_current,
+                segment_total=self.total_segments,
+            )
 
         # Check for time
         time_match = self._time_pattern.search(line)
@@ -235,12 +286,18 @@ class FFmpegProgressParser:
                 size *= 1000 * 1000 * 1000
             total_bytes = size
 
-        return ProgressInfo(
+        result = ProgressInfo(
             progress=progress,
             speed=speed,
             total_bytes=total_bytes,
             status="downloading",
         )
+        # Preserve segment info for HLS
+        if self.media_type == "hls":
+            result.media_type = "hls"
+            result.segment_current = self._segment_current
+            result.segment_total = self.total_segments
+        return result
 
     def _parse_time(self, time_str: str) -> float:
         """Parse time string to seconds."""
@@ -252,6 +309,25 @@ class FFmpegProgressParser:
             return hours * 3600 + minutes * 60 + seconds
         except (ValueError, IndexError):
             return 0.0
+
+
+async def parse_m3u8_segments(url: str) -> Optional[int]:
+    """Parse m3u8 URL and return total segment count."""
+    import asyncio
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "curl", "-sL", "-m", "10", url,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+        if proc.returncode != 0:
+            return None
+        content = stdout.decode("utf-8", errors="ignore")
+        count = sum(1 for line in content.splitlines() if line.strip().endswith(".ts") or ".ts?" in line)
+        return count if count > 0 else None
+    except Exception:
+        return None
 
 
 class SSEProgressStreamer:

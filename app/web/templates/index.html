@@ -361,6 +361,52 @@ body {
 .status-failed { background: var(--danger-light); color: #b91c1c; }
 .status-cancelled { background: var(--border-light); color: var(--fg-tertiary); }
 
+/* ── DOWNLOAD LOG AREA ── */
+.download-logs {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #1e1e2e;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: #a6adc8;
+  max-height: 120px;
+  overflow-y: auto;
+  display: none;
+}
+.download-logs.visible { display: block; }
+.download-logs .log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.download-logs .log-line:last-child { color: #cdd6f4; }
+
+/* ── DOWNLOAD META ROW ── */
+.download-meta {
+  display: flex; gap: 12px; align-items: center;
+  font-size: 11px; color: var(--fg-tertiary);
+  font-family: var(--font-mono);
+}
+.download-meta .meta-tag {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 6px; border-radius: 3px;
+  background: var(--border-light); color: var(--fg-secondary);
+}
+.download-meta .meta-tag.active {
+  background: var(--info-light); color: var(--accent);
+}
+
+/* ── HEARTBEAT ANIMATION ── */
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.6; }
+}
+.heartbeat-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
+  animation: heartbeat 1.5s ease-in-out infinite;
+}
+
 /* ── EMPTY STATE ── */
 .empty-state {
   padding: 40px 16px; text-align: center;
@@ -785,10 +831,23 @@ function formatBytes(bytes) {
   return (bytes / 1073741824).toFixed(2) + ' GB';
 }
 
+function formatElapsed(seconds) {
+  if (seconds == null || seconds < 0) return '';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m > 0) return `${m}m${s.toString().padStart(2, '0')}s`;
+  return `${s}s`;
+}
+
 function formatTime(dt) {
   if (!dt) return '—';
   const d = new Date(dt);
   return d.toLocaleString('zh-CN', { hour12: false });
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function mapCandidate(c) {
@@ -839,6 +898,13 @@ function mapDownloadItem(t) {
     total: formatBytes(total),
     status: t.status || 'pending',
     error: t.error_message || '',
+    media_type: t.media_type || null,
+    segment_current: t.segment_current || null,
+    segment_total: t.segment_total || null,
+    stage: t.stage || null,
+    elapsed_seconds: t.elapsed_seconds || null,
+    file_size_bytes: t.file_size_bytes || null,
+    logs: t.logs || [],
   };
 }
 
@@ -1169,13 +1235,53 @@ function renderDownloads() {
     completed: { label: '已完成', cls: 'status-completed' },
     failed: { label: '失败', cls: 'status-failed' },
     cancelled: { label: '已取消', cls: 'status-cancelled' },
-    paused: { label: '已暂停', cls: 'status-waiting' },
   };
 
   list.innerHTML = state.downloads.map(d => {
     const s = statusMap[d.status] || statusMap.waiting;
     const barCls = d.status === 'completed' ? 'completed' : d.status === 'failed' ? 'failed' : d.status === 'merging' ? 'merging' : '';
     const isActive = ['downloading', 'waiting', 'merging', 'running', 'pending'].includes(d.status);
+    const isHls = d.media_type === 'hls' && d.segment_current != null;
+
+    // Stage display
+    const stageMap = {
+      preparing: '准备中',
+      downloading: '下载中',
+      merging: '合并中',
+      completed: '已完成',
+    };
+    const stageLabel = stageMap[d.stage] || (isActive ? '运行中' : '');
+    const elapsed = formatElapsed(d.elapsed_seconds);
+
+    // Progress text: prefer segment info, then speed, then stage
+    let progressText = '';
+    if (isHls) {
+      progressText = `正在下载 (${d.segment_current}/${d.segment_total || '?'} 个分片)`;
+    } else if (d.progress > 0) {
+      progressText = d.speed;
+    } else if (stageLabel) {
+      progressText = stageLabel;
+    }
+
+    // Heartbeat: show when active but no progress
+    const showHeartbeat = isActive && d.progress < 1 && !isHls;
+
+    // File size display
+    const fileSizeText = d.file_size_bytes ? formatBytes(d.file_size_bytes) : '';
+
+    // ETA display
+    const etaText = isHls ? '' : `<span>ETA ${d.eta}</span>`;
+
+    // Elapsed + file size meta
+    const metaParts = [];
+    if (elapsed) metaParts.push(`<span class="meta-tag${isActive ? ' active' : ''}">${showHeartbeat ? '<span class="heartbeat-dot"></span> ' : ''}已耗时 ${elapsed}</span>`);
+    if (fileSizeText && d.progress < 100) metaParts.push(`<span class="meta-tag">临时文件 ${fileSizeText}</span>`);
+    const metaHtml = metaParts.length > 0 ? `<div class="download-meta">${metaParts.join('')}</div>` : '';
+
+    // Logs
+    const hasLogs = d.logs && d.logs.length > 0 && isActive;
+    const logsHtml = hasLogs ? `<div class="download-logs visible" id="logs-${d.id}">${d.logs.map(l => `<div class="log-line">${escapeHtml(l)}</div>`).join('')}</div>` : '';
+
     return `
     <div class="download-row" data-id="${d.id}">
       <div class="download-left">
@@ -1191,21 +1297,21 @@ function renderDownloads() {
           <div class="progress-bar-fill ${barCls}" style="width:${d.progress}%"></div>
         </div>
         <div class="progress-stats">
-          <span>${d.speed}</span>
-          <span>ETA ${d.eta}</span>
+          <span>${progressText}</span>
+          ${etaText}
           <span>${d.downloaded} / ${d.total}</span>
           <span style="margin-left:auto;">${d.progress.toFixed(1)}%</span>
         </div>
+        ${metaHtml}
       </div>
       <div class="download-right">
         <span class="status-tag ${s.cls}">${s.label}</span>
-        ${isActive ? `<button class="btn btn-ghost btn-sm" onclick="pauseDownload('${d.id}')" title="暂停">暂停</button>` : ''}
-        ${d.status === 'paused' ? `<button class="btn btn-primary btn-sm" onclick="resumeDownload('${d.id}')" title="继续下载">继续</button>` : ''}
-        ${isActive ? `<button class="btn btn-danger-ghost btn-sm" onclick="cancelDownload('${d.id}')" title="取消并删除临时文件">取消</button>` : ''}
+        ${isActive ? `<button class="btn btn-danger-ghost btn-sm" onclick="cancelDownload('${d.id}')" title="取消并清理临时文件">取消</button>` : ''}
         ${d.status === 'failed' ? `<button class="btn btn-secondary btn-sm" onclick="retryDownload('${d.id}')">重试</button>` : ''}
         ${d.status === 'completed' ? `<button class="btn btn-ghost btn-sm" onclick="openFile('${d.path.replace(/'/g, "\\'")}')">打开文件</button>` : ''}
         <button class="btn btn-ghost btn-sm" onclick="deleteDownloadEntry('${d.id}')" title="删除条目">×</button>
       </div>
+      ${logsHtml}
     </div>`;
   }).join('');
 }
@@ -1231,6 +1337,13 @@ async function startDownload(candidateId) {
       downloaded: '0', total: '—',
       status: res.status || 'pending',
       error: '',
+      media_type: null,
+      segment_current: null,
+      segment_total: null,
+      stage: null,
+      elapsed_seconds: null,
+      file_size_bytes: null,
+      logs: [],
     };
     state.downloads.unshift(dl);
     renderDownloads();
@@ -1263,15 +1376,23 @@ function subscribeDownloadProgress(downloadId) {
         dl.path = progress.output_path;
         dl.name = progress.output_path.split('/').pop();
       }
+      // Segment info for HLS
+      if (progress.media_type) dl.media_type = progress.media_type;
+      if (progress.segment_current != null) dl.segment_current = progress.segment_current;
+      if (progress.segment_total != null) dl.segment_total = progress.segment_total;
+      // New fields
+      if (progress.stage) dl.stage = progress.stage;
+      if (progress.elapsed_seconds != null) dl.elapsed_seconds = progress.elapsed_seconds;
+      if (progress.file_size_bytes != null) dl.file_size_bytes = progress.file_size_bytes;
+      if (progress.logs) dl.logs = progress.logs;
 
       renderDownloads();
 
-      if (['completed', 'failed', 'cancelled', 'paused'].includes(progress.status)) {
+      if (['completed', 'failed', 'cancelled'].includes(progress.status)) {
         clearInterval(pollId);
         activeSSE.delete(downloadId);
-        // Don't show failure toast if we already marked it as paused (race condition)
         if (progress.status === 'completed') toast(dl.name + ' 下载完成', 'success');
-        if (progress.status === 'failed' && dl.status !== 'paused') toast(dl.name + ' 下载失败', 'error');
+        if (progress.status === 'failed') toast(dl.name + ' 下载失败', 'error');
       }
     } catch (e) {
       clearInterval(pollId);
@@ -1291,68 +1412,6 @@ async function cancelDownload(id) {
     renderDownloads();
     toast('已取消下载并清理临时文件');
   } catch (e) { toast('取消失败: ' + e.message, 'error'); }
-}
-
-async function pauseDownload(id) {
-  try {
-    // Stop polling FIRST to avoid detecting process exit as "failed"
-    if (activeSSE.has(id)) { clearInterval(activeSSE.get(id)); activeSSE.delete(id); }
-
-    const dl = state.downloads.find(d => d.id === id);
-    if (dl) { dl.status = 'paused'; dl.speed = '—'; dl.eta = '—'; }
-    renderDownloads();
-
-    // Then cancel the process but keep partial files
-    await API._req(`/api/download/${id}/cancel?keep_files=true`, { method: 'POST' });
-    toast('已暂停下载');
-  } catch (e) { toast('暂停失败: ' + e.message, 'error'); }
-}
-
-async function resumeDownload(id) {
-  const dl = state.downloads.find(d => d.id === id);
-  if (!dl || !dl.candidate_id) { toast('无法恢复下载：缺少候选资源信息', 'error'); return; }
-
-  try {
-    // Delete the paused task entry (keep files, clean only temp files)
-    await API._req(`/api/download/${id}`, { method: 'DELETE' });
-    if (activeSSE.has(id)) { clearInterval(activeSSE.get(id)); activeSSE.delete(id); }
-    state.downloads = state.downloads.filter(d => d.id !== id);
-
-    // Pass the previous output filename so yt-dlp can find the .part file
-    // If path is not available, don't pass output_name (backend generates deterministic path from candidate_id)
-    const outputName = dl.path && dl.path !== '—' ? dl.path.split('/').pop() : null;
-    const concurrency = parseInt(document.getElementById('opt-threads').value) || 8;
-    const body = {
-      candidate_id: dl.candidate_id,
-      downloader: 'auto',
-      concurrency: concurrency,
-    };
-    if (outputName) body.output_name = outputName;
-
-    const res = await API._req('/api/download', { method: 'POST', body: JSON.stringify(body) });
-
-    // Verify the new output path matches the old one (for .part file continuity)
-    // The progress polling will update dl.path once the download starts
-
-    const newDl = {
-      id: res.download_id,
-      candidate_id: dl.candidate_id,
-      url: dl.url,
-      name: outputName || '准备中…',
-      source: dl.source,
-      path: outputName ? dl.path : '—',
-      progress: 0,
-      speed: '—', eta: '—',
-      downloaded: dl.downloaded,
-      total: dl.total,
-      status: res.status || 'pending',
-      error: '',
-    };
-    state.downloads.unshift(newDl);
-    renderDownloads();
-    subscribeDownloadProgress(res.download_id);
-    toast('正在继续下载…', 'success');
-  } catch (e) { toast('恢复下载失败: ' + e.message, 'error'); }
 }
 
 async function retryDownload(id) {
@@ -1385,7 +1444,7 @@ async function loadDownloads() {
     const now = Date.now();
     state.downloads = res.items
       .filter(i => {
-        if (['running', 'downloading', 'merging', 'pending', 'paused'].includes(i.status)) return true;
+        if (['running', 'downloading', 'merging', 'pending'].includes(i.status)) return true;
         if (i.status === 'completed' && i.finished_at) {
           return now - new Date(i.finished_at).getTime() < 3600000;
         }

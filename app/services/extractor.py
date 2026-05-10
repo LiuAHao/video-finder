@@ -285,6 +285,10 @@ class HTMLExtractor:
         # Remove quotes and whitespace
         url = url.strip().strip("'\"")
 
+        # Skip non-HTTP URLs (blob:, data:, javascript:, etc.)
+        if url.startswith(('blob:', 'data:', 'javascript:', 'mailto:', 'tel:')):
+            return None
+
         # Skip non-HTTP URLs
         if not url.startswith(('http://', 'https://', '//')):
             # Try to resolve relative URL
@@ -321,6 +325,17 @@ class HTMLExtractor:
         # Blacklist: common API/AJAX endpoints
         if _API_PATH_PATTERNS.search(path):
             return False
+
+        # Blacklist: player property paths (not real URLs)
+        player_prop_patterns = (
+            '/player/', '/videoWidth', '/videoHeight', '/currentTime',
+            '/duration', '/volume', '/muted', '/paused', '/ended',
+            '/readyState', '/networkState', '/buffered', '/seekable',
+        )
+        if any(prop in path for prop in player_prop_patterns):
+            # Allow if it's a real media path containing /player/ but also has media extension
+            if not any(path.endswith(ext) for ext in HLS_EXTENSIONS | DASH_EXTENSIONS | VIDEO_EXTENSIONS):
+                return False
 
         # Whitelist: known media extensions (exclude .ts which are usually HLS segments)
         standalone_video_exts = {".mp4", ".webm", ".mkv", ".avi", ".mov", ".flv", ".m4v", ".wmv", ".f4v", ".vob", ".ogv", ".3gp"}

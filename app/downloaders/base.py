@@ -117,6 +117,33 @@ class BaseDownloader(ABC):
                 error_message=str(e),
             )
 
+    def _get_temp_file_size(self) -> Optional[int]:
+        """Get size of temporary download files (.part, .ytdl, etc.)."""
+        output_path = Path(self.output_path)
+        parent = output_path.parent
+        if not parent.exists():
+            return None
+
+        stem = output_path.stem
+        total = 0
+        found = False
+
+        for f in parent.iterdir():
+            if not f.is_file():
+                continue
+            name = f.name
+            # Match temp files: *.part, *.ytdl, *.temp, or exact output
+            if (name.startswith(stem) and
+                (name.endswith('.part') or name.endswith('.ytdl') or
+                 name.endswith('.temp') or name == output_path.name)):
+                try:
+                    total += f.stat().st_size
+                    found = True
+                except OSError:
+                    pass
+
+        return total if found else None
+
     async def _run_process_with_progress(
         self, command: list[str], parser: Callable[[str], Optional[ProgressInfo]]
     ) -> DownloadResult:
@@ -124,6 +151,7 @@ class BaseDownloader(ABC):
         self._ensure_output_dir()
         output_path = Path(self.output_path)
         stderr_tail: list[str] = []
+        recent_logs: list[str] = []
         start_time = time.time()
 
         try:
@@ -133,7 +161,17 @@ class BaseDownloader(ABC):
                 stderr=asyncio.subprocess.PIPE,
             )
 
+            # Report stage: downloading
+            self._report_progress(ProgressInfo(
+                stage="downloading",
+                elapsed_seconds=0,
+                status="running",
+            ))
+
+            last_monitor_time = start_time
+
             async def read_stream(stream: asyncio.StreamReader | None) -> None:
+                nonlocal last_monitor_time
                 if stream is None:
                     return
                 while True:
@@ -144,9 +182,35 @@ class BaseDownloader(ABC):
                     if line_str:
                         stderr_tail.append(line_str)
                         del stderr_tail[:-20]
+                        # Collect recent logs (keep last 30)
+                        recent_logs.append(line_str)
+                        if len(recent_logs) > 30:
+                            recent_logs.pop(0)
+
                     progress_info = parser(line_str)
                     if progress_info:
+                        # Enrich with extra info
+                        elapsed = int(time.time() - start_time)
+                        progress_info.elapsed_seconds = elapsed
+                        progress_info.stage = progress_info.stage or "downloading"
+                        # Attach recent logs if progress is low (likely no progress output)
+                        if progress_info.progress < 1.0 and len(recent_logs) > 0:
+                            progress_info.logs = recent_logs[-10:]
                         self._report_progress(progress_info)
+
+                    # Periodic file size monitor (every 2s when no progress parsed)
+                    now = time.time()
+                    if now - last_monitor_time >= 2.0:
+                        last_monitor_time = now
+                        elapsed = int(now - start_time)
+                        file_size = self._get_temp_file_size()
+                        self._report_progress(ProgressInfo(
+                            stage="downloading",
+                            elapsed_seconds=elapsed,
+                            file_size_bytes=file_size,
+                            status="running",
+                            logs=recent_logs[-5:] if recent_logs else None,
+                        ))
 
             stdout_task = asyncio.create_task(read_stream(self._process.stdout))
             stderr_task = asyncio.create_task(read_stream(self._process.stderr))
@@ -178,6 +242,9 @@ class BaseDownloader(ABC):
                 self._report_progress(ProgressInfo(
                     progress=100.0,
                     status="completed",
+                    stage="completed",
+                    elapsed_seconds=int(time.time() - start_time),
+                    file_size_bytes=file_size,
                 ))
 
                 return DownloadResult(
