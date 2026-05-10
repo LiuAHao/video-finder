@@ -3,6 +3,7 @@
 import asyncio
 import json
 import re
+from pathlib import Path
 from typing import Optional, Callable
 from urllib.parse import urlparse, unquote
 
@@ -212,6 +213,10 @@ class Sniffer:
         content_type = response.headers.get("content-type", "")
         status = response.status
 
+        # Filter out HLS segment .ts files (must match _on_request filter)
+        if self._is_hls_segment(url):
+            return
+
         # Check content type
         if any(ct in content_type.lower() for ct in VIDEO_CONTENT_TYPES):
             # Update existing resource or add new one
@@ -254,7 +259,6 @@ class Sniffer:
             r'/stream/',
             r'/media/',
             r'/dash/',
-            r'/download/',
         ]
         if any(re.search(pattern, url_lower) for pattern in video_patterns):
             return True
@@ -381,6 +385,9 @@ class Sniffer:
 
         # Add network resources (higher priority)
         for resource in self._network_resources:
+            # Second-layer guard: skip HLS segments that slipped through
+            if self._is_hls_segment(resource.url):
+                continue
             canonical = _canonical(resource.url)
             if canonical not in seen_canonical:
                 seen_canonical.add(canonical)

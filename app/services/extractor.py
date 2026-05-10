@@ -147,8 +147,13 @@ class HTMLExtractor:
             )
             for url_match in url_assign_pattern.finditer(script_content):
                 key_hint = url_match.group("key")
-                url = self._normalize_url(url_match.group("url"), frame_url)
-                if url and self._looks_like_media_resource(url, key_hint=key_hint):
+                raw_value = url_match.group("url")
+                url = self._normalize_url(raw_value, frame_url)
+                if (
+                    url
+                    and self._looks_like_candidate_reference(raw_value, url)
+                    and self._looks_like_media_resource(url, key_hint=key_hint)
+                ):
                     canonical = self._canonical_url(url)
                     if canonical not in seen_urls:
                         seen_urls.add(canonical)
@@ -170,13 +175,13 @@ class HTMLExtractor:
 
         if isinstance(config, dict):
             for key, value in config.items():
-                if (
-                    isinstance(value, str)
-                    and self._is_url(value)
-                    and self._looks_like_media_resource(value, key_hint=key)
-                ):
+                if isinstance(value, str):
                     url = self._normalize_url(value, frame_url)
-                    if url:
+                    if (
+                        url
+                        and self._looks_like_candidate_reference(value, url)
+                        and self._looks_like_media_resource(url, key_hint=key)
+                    ):
                         canonical = self._canonical_url(url)
                         if canonical not in seen_urls:
                             seen_urls.add(canonical)
@@ -313,6 +318,32 @@ class HTMLExtractor:
         """Check if text looks like a URL."""
         return bool(re.match(r'https?://', text))
 
+    def _looks_like_candidate_reference(self, raw_value: str, normalized_url: str) -> bool:
+        """Check whether a raw config value plausibly references a media URL.
+
+        This prevents generic config values like "1", "auto", or "hd" from being
+        normalized into page-relative links and admitted solely because the config
+        key happens to be named `url` or `src`.
+        """
+        raw = raw_value.strip().strip("'\"").lower()
+        if not raw:
+            return False
+
+        if raw.startswith(("http://", "https://", "//", "/", "./", "../")):
+            return True
+
+        if any(ext in raw for ext in HLS_EXTENSIONS | DASH_EXTENSIONS | VIDEO_EXTENSIONS):
+            return True
+
+        normalized_path = urlparse(normalized_url.lower()).path
+        media_keywords = ("video", "stream", "media", "hls", "dash", "m3u8", "mpd")
+        if any(normalized_path.endswith(ext) for ext in HLS_EXTENSIONS | DASH_EXTENSIONS | VIDEO_EXTENSIONS):
+            return True
+        if any(keyword in normalized_path for keyword in media_keywords):
+            return True
+
+        return False
+
     def _looks_like_media_resource(self, url: str, key_hint: Optional[str] = None) -> bool:
         """Filter obvious non-media URLs from generic HTML/config extraction."""
         parsed = urlparse(url.lower())
@@ -363,6 +394,60 @@ class HTMLExtractor:
 
         return False
 
+    def _extract_page_episode_hint(self) -> Optional[int]:
+        """Extract a likely episode number from the page URL."""
+        parsed = urlparse(self.base_url.lower())
+        path = parsed.path
+        basename = path.rsplit("/", 1)[-1]
+
+        patterns = [
+            re.compile(r'/(\d{1,3})\.html?$'),
+            re.compile(r'(?:episode|ep|e)[-_ ]*0*(\d{1,3})(?:\D|$)', re.IGNORECASE),
+            re.compile(r'第\s*0*(\d{1,3})\s*[集话話]', re.IGNORECASE),
+        ]
+        for pattern in patterns:
+            match = pattern.search(path if pattern.pattern.startswith('/') else basename)
+            if match:
+                try:
+                    return int(match.group(1))
+                except ValueError:
+                    return None
+        return None
+
+    @staticmethod
+    def _extract_candidate_episode_hint(url: str) -> Optional[int]:
+        """Extract a likely episode number from a candidate URL basename.
+
+        Only uses strong semantic patterns to avoid false positives from
+        resolution numbers (720p, 1080p), sequential segment IDs (001), etc.
+        """
+        parsed = urlparse(unquote(url).lower())
+        basename = parsed.path.rsplit("/", 1)[-1]
+        stem = basename.rsplit(".", 1)[0]
+
+        patterns = [
+            re.compile(r'第\s*0*(\d{1,3})\s*[集话話]', re.IGNORECASE),
+            re.compile(r'(?:episode|ep|e)[-_ ]*0*(\d{1,3})(?:\D|$)', re.IGNORECASE),
+        ]
+        for pattern in patterns:
+            match = pattern.search(stem)
+            if match:
+                try:
+                    return int(match.group(1))
+                except ValueError:
+                    return None
+        return None
+
+    def _is_relevant_to_page(self, url: str) -> bool:
+        """Return False when a candidate strongly looks like another episode/resource."""
+        page_episode = self._extract_page_episode_hint()
+        candidate_episode = self._extract_candidate_episode_hint(url)
+
+        if page_episode is None or candidate_episode is None:
+            return True
+
+        return page_episode == candidate_episode
+
     def _detect_media_type(self, url: str) -> MediaType:
         """Detect media type from URL."""
         url_lower = url.lower()
@@ -402,12 +487,25 @@ class HTMLExtractor:
         else:
             base_score = SCORE_WEIGHTS["other"]
 
-        # Bonus for network discovery (more reliable)
+        # Discovery-method weighting
         if resource.discovery_method == DiscoveryMethod.NETWORK:
-            base_score += 5
+            base_score += 8
+        elif resource.discovery_method == DiscoveryMethod.PLAYER_CONFIG:
+            base_score += 4
+        elif resource.discovery_method == DiscoveryMethod.HTML:
+            base_score -= 4
 
         # Penalty for temporary URLs
         if self.detect_temporary_url(resource.url):
-            base_score -= 10
+            base_score -= 5
+
+        # Moderate penalty if the URL looks like another episode for this page.
+        if not self._is_relevant_to_page(resource.url):
+            base_score -= 15
+
+        # Wrapper/page URLs should never outrank real media files.
+        parsed = urlparse(resource.url.lower())
+        if parsed.path.endswith((".html", ".htm", ".php")):
+            base_score -= 30
 
         return max(0, base_score)

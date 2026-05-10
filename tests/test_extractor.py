@@ -147,3 +147,41 @@ class TestHTMLExtractor:
         assert "https://example.com/cover.jpg" not in urls
         assert "https://example.com/watch/1.html" not in urls
         assert "https://player.example.com/index.php?url=https://cdn.example.com/video.mp4" not in urls
+
+    def test_filter_other_episode_candidates_for_current_page(self):
+        """Test that other-episode URLs are kept but scored lower (not hard-filtered)."""
+        extractor = HTMLExtractor("https://example.com/watch/3472/1/1.html")
+        html = '''
+        <html>
+        <body>
+            <script>
+                var current = { video_url: "https://cdn.example.com/show/episode_01.mp4" };
+                var next = { video_url: "https://cdn.example.com/show/episode_02.mp4" };
+            </script>
+        </body>
+        </html>
+        '''
+        resources = extractor.extract_from_html(html)
+        urls = [resource.url for resource in resources]
+        # Both episodes are now kept (no hard filter), but episode_01 is scored higher
+        assert "https://cdn.example.com/show/episode_01.mp4" in urls
+        assert "https://cdn.example.com/show/episode_02.mp4" in urls
+        # Verify scoring: episode_01 should score higher
+        r1 = next(r for r in resources if "episode_01" in r.url)
+        r2 = next(r for r in resources if "episode_02" in r.url)
+        assert extractor.calculate_score(r1) > extractor.calculate_score(r2)
+
+    def test_calculate_score_prefers_real_media_over_page_probe(self):
+        """Test that real media URLs rank above page-level yt-dlp fallback candidates."""
+        extractor = HTMLExtractor("https://example.com/watch/3472/1/1.html")
+        network_hls = ExtractedResource(
+            url="https://cdn.example.com/show/episode_01.m3u8",
+            media_type=MediaType.HLS,
+            discovery_method=DiscoveryMethod.NETWORK,
+        )
+        page_probe = ExtractedResource(
+            url="https://example.com/watch/3472/1/1.html",
+            media_type=MediaType.PAGE_EXTRACT,
+            discovery_method=DiscoveryMethod.YT_DLP,
+        )
+        assert extractor.calculate_score(network_hls) > extractor.calculate_score(page_probe)

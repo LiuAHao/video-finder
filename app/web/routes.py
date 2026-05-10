@@ -31,6 +31,8 @@ from ..services.sniffer import Sniffer
 from ..services.downloader import DownloadManager
 from ..services.storage import StorageService
 from ..services.progress import SSEProgressStreamer
+from ..services.extractor import HTMLExtractor
+from ..services.safety import build_safe_output_path
 from ..db.database import get_session_factory
 
 router = APIRouter()
@@ -104,20 +106,11 @@ async def _run_sniff_task(
 
     try:
         candidates = await sniffer.sniff(page_url)
+        scorer = HTMLExtractor(page_url)
 
         # Save candidates
         for candidate in candidates:
-            score = 0
-            if candidate.media_type == MediaType.HLS:
-                score = 80
-            elif candidate.media_type == MediaType.DASH:
-                score = 70
-            elif candidate.media_type == MediaType.DIRECT_VIDEO:
-                score = 60
-            elif candidate.media_type == MediaType.PAGE_EXTRACT:
-                score = 100
-            else:
-                score = 50
+            score = scorer.calculate_score(candidate)
 
             await storage.create_media_candidate(
                 sniff_task_id=task_id,
@@ -127,6 +120,7 @@ async def _run_sniff_task(
                 discovery_method=candidate.discovery_method.value,
                 source_frame_url=candidate.source_frame_url,
                 content_type=candidate.content_type,
+                is_temporary=scorer.detect_temporary_url(candidate.url),
                 referer=referer,
                 user_agent=user_agent,
                 title=candidate.title,
@@ -178,7 +172,7 @@ async def create_download_task(request: DownloadRequest, background_tasks: Backg
     # Determine output path
     download_dir = request.download_dir or settings.download_dir
     if request.output_name:
-        output_path = str(Path(download_dir) / request.output_name)
+        output_path = str(build_safe_output_path(download_dir, request.output_name))
     else:
         # Use page title as filename if available, otherwise use candidate ID
         if candidate.title:

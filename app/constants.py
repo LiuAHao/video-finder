@@ -115,12 +115,12 @@ PLAYER_CONFIG_KEYS = [
 
 # Score weights for candidate ranking
 SCORE_WEIGHTS = {
-    "yt_dlp_with_formats": 100,
-    "master_m3u8": 90,
-    "regular_m3u8": 80,
-    "mpd": 70,
-    "direct_video": 60,
-    "other": 50,
+    "master_m3u8": 95,
+    "regular_m3u8": 88,
+    "direct_video": 82,
+    "mpd": 80,
+    "yt_dlp_with_formats": 74,
+    "other": 40,
 }
 
 # Default download directory

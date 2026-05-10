@@ -15,10 +15,10 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from .config import get_settings
 from .schemas import MediaType, DiscoveryMethod, DownloaderType
 from .services.sniffer import Sniffer
-from .services.extractor import ExtractedResource
+from .services.extractor import ExtractedResource, HTMLExtractor
 from .services.downloader import DownloadManager
 from .services.storage import StorageService
-from .services.safety import SafetyService
+from .services.safety import SafetyService, build_safe_output_path
 from .downloaders.ytdlp import YtdlpProbe
 from .db.database import init_db
 
@@ -101,21 +101,10 @@ async def _sniff(
         )
 
         # Save candidates
-        extractor = sniffer._html_resources[0] if sniffer._html_resources else None
+        scorer = HTMLExtractor(url)
         saved_candidates = []
         for candidate in candidates:
-            # Calculate score
-            score = 0
-            if candidate.media_type == MediaType.HLS:
-                score = 80
-            elif candidate.media_type == MediaType.DASH:
-                score = 70
-            elif candidate.media_type == MediaType.DIRECT_VIDEO:
-                score = 60
-            elif candidate.media_type == MediaType.PAGE_EXTRACT:
-                score = 100
-            else:
-                score = 50
+            score = scorer.calculate_score(candidate)
 
             saved = await storage.create_media_candidate(
                 sniff_task_id=task.id,
@@ -127,6 +116,7 @@ async def _sniff(
                 content_type=candidate.content_type,
                 referer=referer,
                 user_agent=user_agent,
+                is_temporary=scorer.detect_temporary_url(candidate.url),
                 score=score,
             )
             saved_candidates.append(saved)
@@ -289,7 +279,7 @@ async def _download(
 
         # Determine output path
         if output:
-            output_path = str(Path(download_dir) / output)
+            output_path = str(build_safe_output_path(download_dir, output))
         else:
             output_path = str(Path(download_dir) / f"video_{selected.media_type.value}.mp4")
 
@@ -371,7 +361,7 @@ async def _download_direct(
 
     # Determine output path
     if output:
-        output_path = str(Path(download_dir) / output)
+        output_path = str(build_safe_output_path(download_dir, output))
     else:
         from .downloaders.http import HttpDownloader
         filename = HttpDownloader.get_filename_from_url(url)

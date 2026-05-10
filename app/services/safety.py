@@ -230,3 +230,53 @@ class SafetyService:
             messages.append(check.reason)
 
         return " ".join(messages) if messages else "Content may have access restrictions"
+
+
+# ── Output path sanitization ─────────────────────────────────────────────────
+
+import os
+from pathlib import Path
+
+
+def sanitize_output_name(name: str) -> str:
+    """Sanitize a user-supplied output filename.
+
+    - Strips directory components (only keeps basename)
+    - Removes control characters and illegal filename characters
+    - Strips leading/trailing whitespace and dots
+    - Returns empty string if nothing usable remains
+    """
+    # Normalize Windows separators first, then keep only basename.
+    name = name.replace("\\", "/")
+
+    # Keep only basename (reject /tmp/out.mp4, ../../out.mp4, etc.)
+    name = Path(name).name
+
+    # Remove control characters and illegal filename chars
+    name = re.sub(r'[\x00-\x1f\\/:*?"<>|]', '', name)
+
+    # Strip leading/trailing whitespace and dots
+    name = name.strip().strip('.')
+
+    return name
+
+
+def build_safe_output_path(download_dir: str, output_name: str) -> Path:
+    """Build an output path constrained within download_dir.
+
+    Raises ValueError if the resolved path escapes download_dir.
+    """
+    safe_name = sanitize_output_name(output_name)
+    if not safe_name:
+        safe_name = "download"
+
+    download_root = Path(download_dir).resolve()
+    output_path = (download_root / safe_name).resolve()
+
+    # Verify the resolved path is still inside download_dir
+    if not str(output_path).startswith(str(download_root) + os.sep) and output_path != download_root:
+        raise ValueError(
+            f"Output path escapes download directory: {output_name!r} -> {output_path}"
+        )
+
+    return output_path
