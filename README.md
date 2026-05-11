@@ -2,7 +2,7 @@
 
 本地运行的网页视频发现与下载工具，提供 Web 可视化界面和 CLI。输入播放页地址后，自动发现页面中的 HLS、DASH、直链视频等候选资源，并调用合适的下载器完成下载。
 
-> 截图预留位置：建议保存为 `docs/images/web-ui-overview.png` 后插入 README
+![Web UI 概览](docs/images/web-ui-overview.png)
 
 ## Features
 
@@ -59,14 +59,6 @@ video-finder download "https://example.com/video-page"
 ```bash
 video-finder download "https://cdn.example.com/video.m3u8"
 ```
-
-## Docs
-
-- Review:
-  - [2026-05-10](/Users/a0000/Desktop/项目文件/video-finder/docs/reviews/CODE_REVIEW_2026-05-10.md)
-  - [2026-05-11](/Users/a0000/Desktop/项目文件/video-finder/docs/reviews/CODE_REVIEW_2026-05-11.md)
-- Plan:
-  - [Optimization Plan 2026-05-10](/Users/a0000/Desktop/项目文件/video-finder/docs/plans/OPTIMIZATION_PLAN_2026-05-10.md)
 
 ## Notes
 
