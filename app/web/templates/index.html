@@ -1366,6 +1366,9 @@ function subscribeDownloadProgress(downloadId) {
       if (!dl) { clearInterval(pollId); return; }
 
       dl.status = progress.status || dl.status;
+      if (dl.cancelRequested && dl.status === 'failed') {
+        dl.status = 'cancelled';
+      }
       dl.progress = progress.progress || 0;
       dl.speed = progress.speed || '—';
       dl.eta = progress.eta || '—';
@@ -1391,6 +1394,7 @@ function subscribeDownloadProgress(downloadId) {
       if (['completed', 'failed', 'cancelled'].includes(progress.status)) {
         clearInterval(pollId);
         activeSSE.delete(downloadId);
+        if (progress.status === 'failed' && dl.cancelRequested) return;
         if (progress.status === 'completed') toast(dl.name + ' 下载完成', 'success');
         if (progress.status === 'failed') toast(dl.name + ' 下载失败', 'error');
       }
@@ -1407,7 +1411,11 @@ async function cancelDownload(id) {
   try {
     await API.cancelDownload(id);
     const dl = state.downloads.find(d => d.id === id);
-    if (dl) dl.status = 'cancelled';
+    if (dl) {
+      dl.status = 'cancelled';
+      dl.cancelRequested = true;
+      dl.error = '';
+    }
     if (activeSSE.has(id)) { clearInterval(activeSSE.get(id)); activeSSE.delete(id); }
     renderDownloads();
     toast('已取消下载并清理临时文件');

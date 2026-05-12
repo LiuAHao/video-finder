@@ -1,6 +1,8 @@
 """Base downloader interface."""
 
 import asyncio
+import signal
+import sys
 import time
 from abc import ABC, abstractmethod
 from typing import Optional, Callable
@@ -18,11 +20,13 @@ class DownloadResult:
         output_path: Optional[str] = None,
         error_message: Optional[str] = None,
         file_size: Optional[int] = None,
+        cancelled: bool = False,
     ):
         self.success = success
         self.output_path = output_path
         self.error_message = error_message
         self.file_size = file_size
+        self.cancelled = cancelled
 
 
 class BaseDownloader(ABC):
@@ -69,6 +73,55 @@ class BaseDownloader(ABC):
         output_dir = Path(self.output_path).parent
         output_dir.mkdir(parents=True, exist_ok=True)
 
+    async def _terminate_process(self) -> None:
+        """Terminate the downloader process and its child processes."""
+        if not self._process or self._process.returncode is not None:
+            return
+
+        if sys.platform == "win32":
+            try:
+                taskkill = await asyncio.create_subprocess_exec(
+                    "taskkill",
+                    "/PID",
+                    str(self._process.pid),
+                    "/T",
+                    "/F",
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.wait_for(taskkill.wait(), timeout=5)
+            except Exception:
+                pass
+
+            try:
+                await asyncio.wait_for(self._process.wait(), timeout=2)
+                return
+            except asyncio.TimeoutError:
+                pass
+
+        try:
+            if hasattr(signal, "CTRL_BREAK_EVENT"):
+                self._process.send_signal(signal.CTRL_BREAK_EVENT)
+            else:
+                self._process.terminate()
+        except Exception:
+            try:
+                self._process.terminate()
+            except Exception:
+                pass
+
+        try:
+            await asyncio.wait_for(self._process.wait(), timeout=2)
+        except asyncio.TimeoutError:
+            try:
+                self._process.kill()
+            except Exception:
+                pass
+            try:
+                await asyncio.wait_for(self._process.wait(), timeout=2)
+            except Exception:
+                pass
+
     async def _run_process(self, command: list[str]) -> DownloadResult:
         """Run a subprocess and capture output."""
         self._ensure_output_dir()
@@ -87,6 +140,7 @@ class BaseDownloader(ABC):
                 return DownloadResult(
                     success=False,
                     error_message="Download cancelled",
+                    cancelled=True,
                 )
 
             if self._process.returncode == 0:
@@ -217,11 +271,12 @@ class BaseDownloader(ABC):
 
             while self._process.returncode is None:
                 if self._cancelled:
-                    self._process.terminate()
+                    await self._terminate_process()
                     await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
                     return DownloadResult(
                         success=False,
                         error_message="Download cancelled",
+                        cancelled=True,
                     )
                 try:
                     await asyncio.wait_for(self._process.wait(), timeout=0.2)
@@ -232,6 +287,13 @@ class BaseDownloader(ABC):
             await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
 
             if self._process.returncode == 0:
+                if self._cancelled:
+                    return DownloadResult(
+                        success=False,
+                        error_message="Download cancelled",
+                        cancelled=True,
+                    )
+
                 resolved_output_path = self._resolve_output_path(output_path, after_time=start_time)
                 file_size = (
                     resolved_output_path.stat().st_size

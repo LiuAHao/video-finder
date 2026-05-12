@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 from app.downloaders.ytdlp import YtdlpDownloader
-from app.downloaders.ffmpeg import FFmpegDownloader
+from app.downloaders.ffmpeg import FFmpegDownloader, resolve_ffmpeg_path
 from app.downloaders.http import HttpDownloader
 from app.schemas import MediaType
 
@@ -75,6 +75,15 @@ class TestFFmpegDownloader:
         with patch('shutil.which', return_value=None):
             with pytest.raises(FileNotFoundError):
                 downloader.get_command()
+
+    def test_resolve_ffmpeg_path_from_env(self, monkeypatch, tmp_path):
+        """Test resolving ffmpeg from environment variable."""
+        ffmpeg_path = tmp_path / "ffmpeg.exe"
+        ffmpeg_path.write_text("", encoding="utf-8")
+        monkeypatch.setenv("FFMPEG_PATH", str(ffmpeg_path))
+
+        with patch('shutil.which', return_value=None):
+            assert resolve_ffmpeg_path() == str(ffmpeg_path)
 
 
 class TestHttpDownloader:

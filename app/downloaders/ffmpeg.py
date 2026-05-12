@@ -1,12 +1,59 @@
 """ffmpeg downloader implementation."""
 
 import asyncio
+import os
 import shutil
 from typing import Optional, Callable
 from pathlib import Path
 
 from .base import BaseDownloader, DownloadResult
 from ..services.progress import ProgressInfo, FFmpegProgressParser, parse_m3u8_segments
+
+
+def _resolve_binary(binary_name: str, env_var: str, playwright_fallback: Optional[str] = None) -> Optional[str]:
+    """Resolve an executable from PATH, env var, or local Playwright bundle."""
+    binary_path = shutil.which(binary_name)
+    if binary_path:
+        return binary_path
+
+    configured_path = os.environ.get(env_var) or os.environ.get(f"VIDEO_FINDER_{env_var}")
+    if configured_path and Path(configured_path).exists():
+        return configured_path
+
+    if not playwright_fallback:
+        return None
+
+    bundled_path = (
+        Path(__file__).resolve().parents[2]
+        / "venv"
+        / "Lib"
+        / "site-packages"
+        / "playwright"
+        / "driver"
+        / "package"
+        / ".local-browsers"
+    )
+    matches = sorted(bundled_path.glob(playwright_fallback), reverse=True)
+    if matches:
+        return str(matches[0])
+
+    return None
+
+
+def resolve_ffmpeg_path() -> Optional[str]:
+    """Resolve ffmpeg executable path."""
+    return _resolve_binary(
+        "ffmpeg",
+        "FFMPEG_PATH",
+    )
+
+
+def resolve_ffprobe_path() -> Optional[str]:
+    """Resolve ffprobe executable path."""
+    return _resolve_binary(
+        "ffprobe",
+        "FFPROBE_PATH",
+    )
 
 
 class FFmpegDownloader(BaseDownloader):
@@ -43,9 +90,12 @@ class FFmpegDownloader(BaseDownloader):
     def get_command(self) -> list[str]:
         """Get ffmpeg command."""
         # Find ffmpeg executable
-        ffmpeg_path = shutil.which("ffmpeg")
+        ffmpeg_path = resolve_ffmpeg_path()
         if not ffmpeg_path:
-            raise FileNotFoundError("ffmpeg not found. Please install ffmpeg.")
+            raise FileNotFoundError(
+                "ffmpeg not found. Please install a full ffmpeg build and ensure it is on PATH "
+                "or set FFMPEG_PATH."
+            )
 
         cmd = [
             ffmpeg_path,
@@ -103,14 +153,7 @@ class FFmpegDownloader(BaseDownloader):
     async def cancel(self) -> None:
         """Cancel the download."""
         self._cancelled = True
-        if self._process:
-            try:
-                self._process.terminate()
-                await asyncio.sleep(1)
-                if self._process.returncode is None:
-                    self._process.kill()
-            except Exception:
-                pass
+        await self._terminate_process()
 
     def _parse_progress(self, line: str) -> Optional[ProgressInfo]:
         """Parse ffmpeg progress line."""
@@ -122,7 +165,7 @@ class FFmpegProbe:
 
     async def probe(self, url: str) -> Optional[dict]:
         """Probe URL and return media info."""
-        ffprobe_path = shutil.which("ffprobe")
+        ffprobe_path = resolve_ffprobe_path()
         if not ffprobe_path:
             return None
 
@@ -158,7 +201,7 @@ class FFmpegProbe:
 
     async def check_available(self) -> bool:
         """Check if ffmpeg/ffprobe is available."""
-        ffmpeg_path = shutil.which("ffmpeg")
+        ffmpeg_path = resolve_ffmpeg_path()
         if not ffmpeg_path:
             return False
 

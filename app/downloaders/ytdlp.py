@@ -98,14 +98,7 @@ class YtdlpDownloader(BaseDownloader):
     async def cancel(self) -> None:
         """Cancel the download."""
         self._cancelled = True
-        if self._process:
-            try:
-                self._process.terminate()
-                await asyncio.sleep(1)
-                if self._process.returncode is None:
-                    self._process.kill()
-            except Exception:
-                pass
+        await self._terminate_process()
 
     def _parse_progress(self, line: str) -> Optional[ProgressInfo]:
         """Parse yt-dlp progress line."""

@@ -22,6 +22,8 @@
 
 ### Install
 
+**Mac/Linux:**
+
 ```bash
 python3 -m venv venv
 source venv/bin/activate
@@ -29,10 +31,44 @@ pip install -e .
 playwright install chromium
 ```
 
+**Windows (PowerShell):**
+
+```powershell
+python -m venv venv
+& venv\Scripts\Activate.ps1
+pip install -e .
+playwright install chromium
+```
+
+**Windows (Command Prompt):**
+
+```cmd
+python -m venv venv
+venv\Scripts\activate.bat
+pip install -e .
+playwright install chromium
+```
+
 ### Run
+
+**Mac/Linux:**
 
 ```bash
 source venv/bin/activate
+video-finder open
+```
+
+**Windows (PowerShell):**
+
+```powershell
+& venv\Scripts\Activate.ps1
+video-finder open
+```
+
+**Windows (Command Prompt):**
+
+```cmd
+venv\Scripts\activate.bat
 video-finder open
 ```
 

@@ -177,8 +177,14 @@ class DownloadManager:
         # Start download
         result = await downloader.download()
 
-        # If yt-dlp failed for HLS/DASH, try ffmpeg as fallback
-        if not result.success and selected_type == DownloaderType.YT_DLP and media_type in (MediaType.HLS, MediaType.DASH):
+        # If yt-dlp failed for HLS/DASH, try ffmpeg as fallback.
+        if (
+            not result.success
+            and not result.cancelled
+            and not self.is_cancelled(task_id)
+            and selected_type == DownloaderType.YT_DLP
+            and media_type in (MediaType.HLS, MediaType.DASH)
+        ):
             self.progress_tracker.update(task_id, status="running", message="yt-dlp 失败，尝试 ffmpeg 下载...")
             ffmpeg_dl = FFmpegDownloader(
                 url=url,
@@ -201,6 +207,7 @@ class DownloadManager:
                 ),
                 media_type=media_type.value,
             )
+            task.downloader = ffmpeg_dl
             result = await ffmpeg_dl.download()
 
         # Update task result
@@ -212,6 +219,13 @@ class DownloadManager:
                 task_id,
                 status="completed",
                 progress=100.0,
+            )
+        elif result.cancelled or self.is_cancelled(task_id):
+            result.cancelled = True
+            self.progress_tracker.update(
+                task_id,
+                status="cancelled",
+                message=None,
             )
         else:
             self.progress_tracker.update(
@@ -242,3 +256,8 @@ class DownloadManager:
     def get_active_tasks(self) -> list[str]:
         """Get list of active task IDs."""
         return list(self._active_tasks.keys())
+
+    def is_cancelled(self, task_id: str) -> bool:
+        """Return whether a task has been marked as cancelled."""
+        info = self.progress_tracker.get_progress(task_id)
+        return bool(info and info.status == "cancelled")

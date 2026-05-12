@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     # Downloader settings
     default_downloader: str = Field(default="auto", description="Default downloader: auto, ytdlp, ffmpeg, http")
     concurrency: int = Field(default=DEFAULT_CONCURRENCY, ge=1, le=32, description="Concurrent connections")
+    ffmpeg_path: str = Field(default="", description="Optional full ffmpeg executable path")
+    ffprobe_path: str = Field(default="", description="Optional ffprobe executable path")
 
     # User Agent
     user_agent: str = Field(default=DEFAULT_USER_AGENT, description="User-Agent string")

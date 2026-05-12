@@ -12,6 +12,10 @@ from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
+from . import configure_runtime_environment
+
+configure_runtime_environment()
+
 from .config import get_settings
 from .schemas import MediaType, DiscoveryMethod, DownloaderType
 from .services.sniffer import Sniffer

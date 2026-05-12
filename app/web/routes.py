@@ -1,6 +1,7 @@
 """Web API routes."""
 
 import asyncio
+import hashlib
 import json
 import re
 from typing import Optional
@@ -42,6 +43,27 @@ templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 storage = StorageService()
 download_manager = DownloadManager()
 progress_streamer = SSEProgressStreamer()
+
+
+def _build_default_output_path(download_dir: str, candidate, task_id: str) -> str:
+    """Build a unique output path for a candidate download attempt."""
+    if candidate.title:
+        safe_name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '', candidate.title).strip()
+        safe_name = safe_name[:160] if safe_name else "video"
+    else:
+        safe_name = "video"
+
+    url_hash = hashlib.sha1(candidate.media_url.encode("utf-8")).hexdigest()[:8]
+    parts = [
+        safe_name,
+        candidate.media_type,
+        candidate.discovery_method,
+        candidate.id[-8:],
+        task_id[-8:],
+        url_hash,
+    ]
+    filename = "__".join(str(part) for part in parts if part) + ".mp4"
+    return str(build_safe_output_path(download_dir, filename))
 
 
 # Web UI Routes
@@ -169,26 +191,7 @@ async def create_download_task(request: DownloadRequest, background_tasks: Backg
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
-    # Determine output path
-    download_dir = request.download_dir or settings.download_dir
-    if request.output_name:
-        output_path = str(build_safe_output_path(download_dir, request.output_name))
-    else:
-        # Use page title as filename if available, otherwise use candidate ID
-        if candidate.title:
-            # Sanitize title for filename: remove invalid chars, limit length
-            safe_name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '', candidate.title).strip()
-            safe_name = safe_name[:200] if safe_name else None
-        else:
-            safe_name = None
-
-        if safe_name:
-            output_path = str(Path(download_dir) / f"{safe_name}.mp4")
-        else:
-            short_id = request.candidate_id[-8:]
-            output_path = str(Path(download_dir) / f"video_{candidate.media_type}_{short_id}.mp4")
-
-    # Create download task
+    # Create download task first so the default filename can include the attempt ID.
     media_type = MediaType(candidate.media_type)
     downloader_type = DownloaderType(request.downloader) if request.downloader != "auto" else DownloaderType.AUTO
 
@@ -196,8 +199,16 @@ async def create_download_task(request: DownloadRequest, background_tasks: Backg
         candidate_id=request.candidate_id,
         url=candidate.media_url,
         downloader=downloader_type.value,
-        output_path=output_path,
+        output_path=None,
     )
+
+    download_dir = request.download_dir or settings.download_dir
+    if request.output_name:
+        output_path = str(build_safe_output_path(download_dir, request.output_name))
+    else:
+        output_path = _build_default_output_path(download_dir, candidate, task.id)
+
+    await storage.update_download_task(task.id, output_path=output_path)
 
     # Run download in background
     background_tasks.add_task(
@@ -290,7 +301,25 @@ async def _run_download_task(
                 "output_path": result.output_path,
             }),
         )
+    elif result.cancelled or download_manager.is_cancelled(task_id):
+        _cleanup_download_files(output_path, remove_final=True)
+        await storage.update_download_task(
+            task_id,
+            status="cancelled",
+            error_message=None,
+            finished_at=datetime.utcnow(),
+        )
+        await progress_streamer.publish(
+            task_id,
+            json.dumps({
+                "progress": 0.0,
+                "speed": None,
+                "eta": None,
+                "status": "cancelled",
+            }),
+        )
     else:
+        _cleanup_download_files(output_path, remove_final=True)
         await storage.update_download_task(
             task_id,
             status="failed",
@@ -413,8 +442,10 @@ async def delete_download_task(download_id: str, cleanup: bool = False):
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
-    # Always clean temp files when deleting task
-    _cleanup_download_files(task.output_path)
+    _cleanup_download_files(
+        task.output_path,
+        remove_final=cleanup or task.status != "completed",
+    )
 
     success = await storage.delete_history(download_id)
     if not success:
@@ -422,7 +453,7 @@ async def delete_download_task(download_id: str, cleanup: bool = False):
     return {"status": "deleted"}
 
 
-def _cleanup_download_files(output_path: str) -> None:
+def _cleanup_download_files(output_path: str, remove_final: bool = True) -> None:
     """Remove downloaded file and all related temp files.
 
     Cleans:
@@ -442,8 +473,8 @@ def _cleanup_download_files(output_path: str) -> None:
     parent = p.parent
     stem = p.stem
 
-    # 1. Remove the final output file
-    if p.exists():
+    # 1. Remove the final output file for failed/cancelled cleanup.
+    if remove_final and p.exists():
         try:
             p.unlink()
         except OSError:
@@ -498,6 +529,28 @@ def _cleanup_download_files(output_path: str) -> None:
             except OSError:
                 pass
 
+    # 7. Remove any remaining sidecar files created with the unique output prefix.
+    sidecar_suffixes = {
+        ".part",
+        ".ytdl",
+        ".temp",
+        ".tmp",
+        ".ts",
+        ".m4a",
+        ".webm",
+        ".frag",
+    }
+    for f in parent.glob(f"{stem}*"):
+        if not f.is_file():
+            continue
+        if not remove_final and f.resolve() == p.resolve():
+            continue
+        if f.suffix.lower() in sidecar_suffixes or ".part" in f.name or "fragment" in f.name.lower():
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
 
 @router.post("/api/open-file")
 async def open_file(request: Request):
@@ -538,7 +591,7 @@ async def cancel_download(download_id: str):
     success = await download_manager.cancel_download(download_id)
 
     # Clean up all download files (including partial, segments, etc.)
-    _cleanup_download_files(task.output_path)
+    _cleanup_download_files(task.output_path, remove_final=True)
 
     if not success and task.status in {"completed", "failed", "cancelled"}:
         return {"status": task.status}

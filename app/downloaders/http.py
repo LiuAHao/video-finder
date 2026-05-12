@@ -61,6 +61,7 @@ class HttpDownloader(BaseDownloader):
                                 return DownloadResult(
                                     success=False,
                                     error_message="Download cancelled",
+                                    cancelled=True,
                                 )
 
                             f.write(chunk)
