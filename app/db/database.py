@@ -1,8 +1,8 @@
 """Database connection and initialization."""
 
 from pathlib import Path
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import sessionmaker
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from ..config import get_settings
 from ..models import Base

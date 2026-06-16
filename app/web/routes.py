@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-from ..config import get_settings
+from ..config import ENV_FILE_PATH, get_settings, resolve_project_path
 from ..schemas import (
     SniffRequest,
     SniffResponse,
@@ -552,6 +552,103 @@ def _cleanup_download_files(output_path: str, remove_final: bool = True) -> None
                 pass
 
 
+@router.post("/api/select-directory")
+async def select_directory(request: Request):
+    """Open a native directory selection dialog and return the selected path.
+
+    Platform strategy:
+      - macOS:  osascript (native Finder dialog, always on top)
+      - Windows: PowerShell FolderBrowserDialog
+      - Linux:  tkinter via subprocess (runs in its own main thread)
+    All paths use asyncio.create_subprocess_exec to avoid blocking the event loop.
+    """
+    import asyncio
+    import platform
+    import json
+    import sys
+
+    data = await request.json() or {}
+    current_dir = data.get("current_dir", "")
+    system = platform.system()
+
+    try:
+        path = None
+
+        if system == "Darwin":
+            # Use AppleScript – native macOS folder chooser, always comes to front
+            apple_script = 'POSIX path of (choose folder with prompt "选择下载目录"'
+            if current_dir:
+                # Escape double quotes in the path for AppleScript
+                escaped = current_dir.replace("\\", "\\\\").replace('"', '\\"')
+                apple_script += f' default location "{escaped}"'
+            apple_script += ")"
+
+            proc = await asyncio.create_subprocess_exec(
+                "osascript", "-e", apple_script,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+            if proc.returncode == 0 and stdout:
+                path = stdout.decode().strip().rstrip("/")
+                if not path:
+                    path = None
+
+        elif system == "Windows":
+            # Use PowerShell FolderBrowserDialog
+            ps_script = (
+                "Add-Type -AssemblyName System.Windows.Forms; "
+                "$fb = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                "$fb.Description = '选择下载目录'; "
+                + (f"$fb.SelectedPath = '{current_dir}'; " if current_dir else "")
+                + "if ($fb.ShowDialog() -eq 'OK') { $fb.SelectedPath } else { '' }"
+            )
+            proc = await asyncio.create_subprocess_exec(
+                "powershell", "-NoProfile", "-Command", ps_script,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+            if stdout:
+                path = stdout.decode().strip()
+                if not path:
+                    path = None
+
+        else:
+            # Linux / fallback: tkinter in subprocess
+            tk_script = r"""
+import json, sys, os
+try:
+    import tkinter as tk
+    from tkinter import filedialog
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    initial_dir = sys.argv[1] if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]) else None
+    path = filedialog.askdirectory(title="选择下载目录", initialdir=initial_dir)
+    root.destroy()
+    print(json.dumps({"path": path if path else None}))
+except Exception as e:
+    print(json.dumps({"path": None, "error": str(e)}))
+"""
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable, "-c", tk_script, current_dir or "",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+            if stdout:
+                result = json.loads(stdout.decode().strip())
+                path = result.get("path")
+
+        return {"path": path}
+
+    except asyncio.TimeoutError:
+        return {"path": None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/api/open-file")
 async def open_file(request: Request):
     """Open a file or directory with the system default application."""
@@ -668,14 +765,19 @@ async def get_config():
 
 @router.put("/api/config")
 async def update_config(request: ConfigUpdate):
-    """Update configuration and persist to .env file."""
+    """Update configuration and persist to the project's local .env file."""
+    import os
+
     settings = get_settings()
-    env_path = Path(__file__).parent.parent.parent / ".env"
+    env_path = ENV_FILE_PATH
 
     # Build updated values
     updates = {}
     if request.download_dir is not None:
-        updates["VIDEO_FINDER_DOWNLOAD_DIR"] = request.download_dir
+        raw_download_dir = request.download_dir.strip()
+        updates["VIDEO_FINDER_DOWNLOAD_DIR"] = resolve_project_path(
+            raw_download_dir or "downloads"
+        )
     if request.headless is not None:
         updates["VIDEO_FINDER_HEADLESS"] = str(request.headless).lower()
     if request.wait_seconds is not None:
@@ -716,16 +818,22 @@ async def update_config(request: ConfigUpdate):
 
     env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
 
-    # Return the merged config (settings + overrides)
+    # Keep current process in sync with the just-persisted values.
+    for key, value in updates.items():
+        os.environ[key] = value
+
+    refreshed = get_settings()
+    refreshed.ensure_directories()
+
     return ConfigResponse(
-        download_dir=updates.get("VIDEO_FINDER_DOWNLOAD_DIR", settings.download_dir),
-        database_path=settings.database_path,
-        headless=updates.get("VIDEO_FINDER_HEADLESS", str(settings.headless)).lower() == "true",
-        wait_seconds=int(updates.get("VIDEO_FINDER_WAIT_SECONDS", settings.wait_seconds)),
-        auto_click=updates.get("VIDEO_FINDER_AUTO_CLICK", str(settings.auto_click)).lower() == "true",
-        default_downloader=updates.get("VIDEO_FINDER_DEFAULT_DOWNLOADER", settings.default_downloader),
-        concurrency=int(updates.get("VIDEO_FINDER_CONCURRENCY", settings.concurrency)),
-        user_agent=updates.get("VIDEO_FINDER_USER_AGENT", settings.user_agent),
+        download_dir=refreshed.download_dir,
+        database_path=refreshed.database_path,
+        headless=refreshed.headless,
+        wait_seconds=refreshed.wait_seconds,
+        auto_click=refreshed.auto_click,
+        default_downloader=refreshed.default_downloader,
+        concurrency=refreshed.concurrency,
+        user_agent=refreshed.user_agent,
     )
 
 

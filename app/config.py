@@ -1,19 +1,36 @@
 """Configuration management."""
 
-import os
 from pathlib import Path
+
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
-from pydantic import Field
 
 from .constants import (
-    DEFAULT_DOWNLOAD_DIR,
+    DEFAULT_CONCURRENCY,
     DEFAULT_DATABASE_PATH,
+    DEFAULT_DOWNLOAD_DIR,
     DEFAULT_HOST,
     DEFAULT_PORT,
-    DEFAULT_WAIT_SECONDS,
-    DEFAULT_CONCURRENCY,
     DEFAULT_USER_AGENT,
+    DEFAULT_WAIT_SECONDS,
 )
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+ENV_FILE_PATH = PROJECT_ROOT / ".env"
+LOG_DIR_PATH = PROJECT_ROOT / "logs"
+
+
+def resolve_project_path(path_value: str) -> str:
+    """Resolve a user-provided path against the project root.
+
+    Relative paths are anchored to the repository root so local config, downloads,
+    and SQLite history always persist in the same project directory regardless of
+    the shell's current working directory.
+    """
+    path = Path(path_value).expanduser()
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    return str(path.resolve())
 
 
 class Settings(BaseSettings):
@@ -46,16 +63,22 @@ class Settings(BaseSettings):
 
     model_config = {
         "env_prefix": "VIDEO_FINDER_",
-        "env_file": ".env",
+        "env_file": str(ENV_FILE_PATH),
         "env_file_encoding": "utf-8",
         "case_sensitive": False,
     }
+
+    @field_validator("download_dir", "database_path", mode="after")
+    @classmethod
+    def _normalize_local_paths(cls, value: str) -> str:
+        """Keep persisted local paths stable across restarts and launch locations."""
+        return resolve_project_path(value)
 
     def ensure_directories(self) -> None:
         """Ensure required directories exist."""
         Path(self.download_dir).mkdir(parents=True, exist_ok=True)
         Path(self.database_path).parent.mkdir(parents=True, exist_ok=True)
-        Path("./logs").mkdir(parents=True, exist_ok=True)
+        LOG_DIR_PATH.mkdir(parents=True, exist_ok=True)
 
 
 def get_settings() -> Settings:
