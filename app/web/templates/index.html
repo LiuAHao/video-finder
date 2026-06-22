@@ -435,8 +435,11 @@ body {
 /* ── HISTORY TABLE ── */
 .table-wrap { overflow-x: auto; }
 table {
-  width: 100%; border-collapse: collapse;
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
   font-size: 13px;
+  table-layout: auto;
 }
 th {
   text-align: left; padding: 10px 12px;
@@ -447,18 +450,71 @@ th {
   white-space: nowrap;
 }
 td {
-  padding: 10px 12px;
+  padding: 12px;
   border-bottom: 1px solid var(--border-light);
   color: var(--fg-secondary);
+  vertical-align: top;
 }
-td:first-child { color: var(--fg); font-weight: 500; }
 tr:hover td { background: #fafbfc; }
-.td-url {
-  font-family: var(--font-mono); font-size: 12px;
-  max-width: 280px; white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis;
+.th-time, .td-time,
+.th-type, .td-type,
+.th-status, .td-status,
+.th-actions, .td-actions { white-space: nowrap; }
+.th-time, .td-time { width: 148px; }
+.th-type, .td-type { width: 92px; }
+.th-status, .td-status { width: 92px; }
+.th-actions, .td-actions { width: 110px; }
+.td-time {
+  color: var(--fg);
+  font-weight: 500;
 }
-.td-actions { display: flex; gap: 4px; }
+.td-detail {
+  min-width: 0;
+}
+.history-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.history-url {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.history-file-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--fg-secondary);
+}
+.history-file-label {
+  flex-shrink: 0;
+  color: var(--fg-tertiary);
+}
+.history-file-name {
+  min-width: 0;
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.td-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+@media (max-width: 960px) {
+  table { min-width: 640px; }
+  .th-time, .td-time { width: 132px; }
+  .th-actions, .td-actions { width: 96px; }
+}
 
 /* ── SETTINGS ── */
 .settings-grid {
@@ -651,12 +707,12 @@ tr:hover td { background: #fafbfc; }
         <table>
           <thead>
             <tr>
-              <th>时间</th>
+              <th class="th-time">时间</th>
               <th>页面 URL</th>
-              <th>资源类型</th>
-              <th>状态</th>
-              <th>输出文件</th>
-              <th>操作</th>
+              <th class="th-type">资源类型</th>
+              <th class="th-status">状态</th>
+              <th class="th-file">输出文件</th>
+              <th class="th-actions">操作</th>
             </tr>
           </thead>
           <tbody id="history-tbody"></tbody>
@@ -1506,6 +1562,7 @@ async function loadHistory() {
       type: (mediaTypeMap[h.media_type] || mediaTypeMap.unknown).label,
       status: h.status,
       file: h.output_path ? h.output_path.split('/').pop() : '—',
+      fileTitle: h.output_path || '—',
     }));
     renderHistory();
   } catch (e) { console.error('加载历史记录失败:', e); }
@@ -1542,11 +1599,18 @@ function renderHistory() {
     const typeCss = h.type.toLowerCase().replace(/[^a-z]/g, '');
     return `
     <tr>
-      <td>${h.time}</td>
-      <td class="td-url" title="${h.url}">${h.url}</td>
-      <td><span class="resource-type type-${typeCss}" style="font-size:10px;padding:1px 5px;">${h.type}</span></td>
-      <td><span class="status-tag ${s.cls}">${s.label}</span></td>
-      <td style="font-family:var(--font-mono);font-size:12px;">${h.file}</td>
+      <td class="td-time">${h.time}</td>
+      <td class="td-detail">
+        <div class="history-detail">
+          <div class="history-url" title="${h.url}">${h.url}</div>
+          <div class="history-file-row" title="${h.fileTitle}">
+            <span class="history-file-label">文件</span>
+            <span class="history-file-name">${h.file}</span>
+          </div>
+        </div>
+      </td>
+      <td class="td-type"><span class="resource-type type-${typeCss}" style="font-size:10px;padding:1px 5px;">${h.type}</span></td>
+      <td class="td-status"><span class="status-tag ${s.cls}">${s.label}</span></td>
       <td class="td-actions">
         <button class="btn btn-ghost btn-sm" onclick="copyText('${h.url.replace(/'/g, "\\'")}')">复制链接</button>
         <button class="btn btn-danger-ghost btn-sm" onclick="deleteHistory('${h.id}')">删除</button>
